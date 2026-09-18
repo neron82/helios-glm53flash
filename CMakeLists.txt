@@ -38,6 +38,9 @@ target_include_directories(helios PRIVATE src third_party
 target_link_libraries(helios PRIVATE CUDA::cudart CUDA::cuda_driver Threads::Threads
   exl3_quant_core aux attn_core)
 
+add_executable(helios_utf8_test test/test_utf8.cpp)
+target_include_directories(helios_utf8_test PRIVATE src)
+
 add_executable(helios_chat_test src/core/test_chat.cpp src/core/chat.cpp src/tokenizer/tokenizer.cpp)
 target_include_directories(helios_chat_test PRIVATE src third_party)
 target_link_libraries(helios_chat_test PRIVATE Threads::Threads)
