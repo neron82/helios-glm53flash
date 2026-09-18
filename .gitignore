@@ -1,0 +1,8 @@
+# Build output (top level and the standalone kernel test builds)
+build/
+src/cuda/*/build/
+
+# Engine runtime artefacts, if a checkpoint lives inside the tree
+.helios.census
+*.nsys-rep
+*.sqlite
