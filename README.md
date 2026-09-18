@@ -112,8 +112,14 @@ cmake -B build -G Ninja
 cmake --build build
 ```
 
-Requirements: CUDA toolkit (13.0 used here), a C++20 host compiler, CMake ≥ 3.20, Ninja. The only
-third-party code is vendored: `httplib.h` and `nlohmann/json.hpp`.
+Requirements: CUDA toolkit (13.0 used here), a C++20 host compiler, CMake ≥ 3.24, Ninja, and a CPU
+with AVX2 — the build targets `x86-64-v3` (Haswell or newer). Kernels are compiled for `sm_86`, so an
+RTX 3090-class card is assumed. The only third-party code is vendored: `httplib.h` and
+`nlohmann/json.hpp`.
+
+The kernel libraries under `src/cuda/` are standalone CMake projects (each with its own parity test);
+the top-level build adds them as subprojects, so the two commands above build everything from a clean
+checkout. Verified on a fresh clone: configure, build, and all four kernel tests pass.
 
 Kernel-level tests build alongside the engine (`src/cuda/*/build`), and `test/` holds the
 tokenizer's reference vectors.
