@@ -182,6 +182,7 @@ private:
 
 // OpenAI-compatible HTTP front end (server.cpp). default_max_tokens <= 0 keeps the built-in default.
 int run_server(Runner& runner, Tokenizer& tk, const std::string& host, int port, int n_threads = 4,
-               const std::string& api_key = std::string(), int default_max_tokens = 0);
+               const std::string& api_key = std::string(), int default_max_tokens = 0,
+               const std::string& default_reasoning_effort = std::string());
 
 }  // namespace helios

@@ -22,6 +22,14 @@ CAP=${CAP:-262144}
 CHUNK=${CHUNK:-8192}
 # Empty = no auth. Set for anything reachable beyond localhost.
 API_KEY=${API_KEY:-}
+# Default reasoning effort for requests that do not set one: low | high | max.
+# Measured on a "review this README" prompt with a 4000-token budget:
+#   low  -> 488 tokens total,  664 chars of reasoning, 1355 chars of answer,  37 s
+#   high -> 1401 tokens total, 3551 chars of reasoning, 1713 chars of answer,  95 s
+#   max  -> 4000 tokens burned, 11603 chars of reasoning, NO ANSWER AT ALL, 280 s
+# "max" will spend the entire output budget thinking without ever answering, so "high" is the
+# default here and "low" is the right choice for ordinary chat.
+REASONING_EFFORT=${REASONING_EFFORT:-high}
 
 SERVER_LOCK_FILE=${SERVER_LOCK_FILE:-${XDG_RUNTIME_DIR:-/tmp}/helios-port-${PORT}.lock}
 # Loading 85 GB of weights and pinning the 73 GB arena takes ~40-90 s.
@@ -192,9 +200,11 @@ start() {
 
     local args=(serve "$MODEL_DIR" --host "$HOST" --port "$PORT" --cap "$CAP" --chunk "$CHUNK")
     [[ -n "$API_KEY" ]] && args+=(--api-key "$API_KEY")
+    [[ -n "$REASONING_EFFORT" ]] && args+=(--reasoning-effort "$REASONING_EFFORT")
 
     # Export too, so /proc/<pid>/environ carries the identity the checks look for.
     MODEL_DIR="$MODEL_DIR" PORT="$PORT" HOST="$HOST" CAP="$CAP" CHUNK="$CHUNK" \
+        REASONING_EFFORT="$REASONING_EFFORT" \
         nohup "$BIN" "${args[@]}" >>"$LOG_FILE" 2>&1 9>&- &
     local pid=$!
     pid_start_line "$pid" >"$PID_FILE"

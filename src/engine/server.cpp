@@ -37,6 +37,9 @@ constexpr const char* kModelId = "glm-5.3-flash-exl3";
 struct ServerOpts {
   std::string api_key;          // empty = no auth
   int default_max_tokens = 32768;
+  // Default reasoning effort for requests that do not set one. The model's template accepts
+  // low/high/max and treats anything else as max, so the server validates too.
+  std::string default_reasoning_effort = "max";
   int n_threads = 4;
 };
 ServerOpts g_opts;
@@ -171,6 +174,7 @@ bool parse_chat(const json& body, ChatRequest& out, std::string& err) {
     const json& tc = body["tool_choice"];
     if (tc.is_string() && tc.get<std::string>() == "none") out.tools_off = true;
   }
+  out.reasoning_effort = g_opts.default_reasoning_effort;   // server default; request wins below
   if (body.contains("reasoning_effort") && body["reasoning_effort"].is_string())
     out.reasoning_effort = body["reasoning_effort"].get<std::string>();
   if (body.contains("chat_template_kwargs") && body["chat_template_kwargs"].is_object()) {
@@ -199,11 +203,19 @@ struct GenOutcome {
 }  // namespace
 
 int run_server(Runner& runner, Tokenizer& tk, const std::string& host, int port, int n_threads,
-               const std::string& api_key, int default_max_tokens) {
+               const std::string& api_key, int default_max_tokens,
+               const std::string& default_reasoning_effort) {
   httplib::Server srv;
   g_opts.api_key = api_key;
   g_opts.n_threads = n_threads;
   if (default_max_tokens > 0) g_opts.default_max_tokens = default_max_tokens;
+  if (default_reasoning_effort == "low" || default_reasoning_effort == "high" ||
+      default_reasoning_effort == "max") {
+    g_opts.default_reasoning_effort = default_reasoning_effort;
+  } else if (!default_reasoning_effort.empty()) {
+    fprintf(stderr, "[server] unknown reasoning effort '%s' (want low|high|max); using max\n",
+            default_reasoning_effort.c_str());
+  }
   g_ctx_cap = runner.context_cap();
   static std::mutex gen_mu;          // one generation at a time (single-sequence engine)
   static std::atomic<uint64_t> served{0};
@@ -230,7 +242,8 @@ int run_server(Runner& runner, Tokenizer& tk, const std::string& host, int port,
                                   {"owned_by", "helios"},
                                   {"root", kModelId},
                                   {"max_tokens", g_opts.default_max_tokens},
-                                  {"context_length", g_ctx_cap}}})}};
+                                  {"context_length", g_ctx_cap},
+                                  {"reasoning_effort", g_opts.default_reasoning_effort}}})}};
     res.set_content(j.dump(), "application/json");
   });
 

@@ -165,6 +165,7 @@ reaping and a wait for the previous instance's VRAM to be released:
 | `--port N` | 8080 | HTTP port |
 | `--api-key K` | none | require `Authorization: Bearer K` |
 | `--max-tokens N` | 32768 | output length used when a request omits `max_tokens`; the engine has no other output cap |
+| `--reasoning-effort L` | max | default reasoning effort (`low`/`high`/`max`) for requests that omit one |
 | `--tokens N` | 64 | generation length for `gen` |
 | `--temp T` | 0.7 | sampling temperature; `0` is greedy and is the only mode MTP engages in |
 | `--prompt S` / `--prompt-file F` | — | prompt text for `gen` |
@@ -181,11 +182,34 @@ reaping and a wait for the previous instance's VRAM to be released:
 | `HELIOS_GPU_ORDER` | auto | `trunk,slots` physical GPU indices, overriding the PCIe-bandwidth ranking |
 | `HELIOS_NO_PIN` | off | do not pin the RAM arena (for low-RAM hosts; costs streaming bandwidth) |
 | `HELIOS_MAX_TOKENS` | 32768 | same as `--max-tokens` |
+| `HELIOS_REASONING_EFFORT` | max | same as `--reasoning-effort` |
 | `HELIOS_PROF` | off | per-stage timing accumulators, printed at exit |
 | `HELIOS_LAYER_MAJOR` | off | alternative layer-major prefill (see Limitations) |
 
 Several debug switches exist for kernel work (`HELIOS_DUMP_*`, `HELIOS_TRACE`, `HELIOS_SELFTEST`,
 `HELIOS_FORCE_SHAPE`, `HELIOS_MLA_SHAPE`, …); they are documented in the source next to their use.
+
+## Reasoning effort
+
+The model's chat template accepts a `reasoning_effort` of `low`, `high` or `max` and injects it as a
+`Reasoning Effort: Low|High|Max` system line; anything else is treated as `max`. It is settable per
+request (`reasoning_effort` or `chat_template_kwargs.reasoning_effort`) and per server
+(`--reasoning-effort`, `HELIOS_REASONING_EFFORT`), where it becomes the default for requests that do
+not set one. `/v1/models` advertises it.
+
+This matters more than it sounds: `max` will happily spend an entire output budget reasoning and never
+emit an answer. Measured on a "review this README" prompt with `max_tokens: 4000`:
+
+| effort | finish | completion tokens | reasoning | answer | wall |
+|---|---|---|---|---|---|
+| `low` | stop | 488 | 664 chars | 1355 chars | 37 s |
+| `high` | stop | 1401 | 3551 chars | 1713 chars | 95 s |
+| `max` | **length** | **4000 (all of it)** | 11603 chars | **0 chars** | 280 s |
+
+The reasoning is returned separately as `reasoning_content`, so clients that display thinking can
+show it and clients that do not can ignore it. `thinking: false` (or
+`chat_template_kwargs.enable_thinking: false`) instead renders an immediately-closed think block, so
+the model answers directly rather than reasoning first.
 
 ## Measured performance
 
