@@ -8,10 +8,13 @@ find_package(Threads REQUIRED)
 set(CMAKE_CUDA_ARCHITECTURES 86)
 set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -O3 --use_fast_math -lineinfo")
 
-# Kernel libraries built by their own standalone projects (see src/cuda/*/CMakeLists.txt).
-set(QUANT_LIB ${CMAKE_CURRENT_SOURCE_DIR}/src/cuda/quant/build/libexl3_quant_core.a)
-set(AUX_LIB   ${CMAKE_CURRENT_SOURCE_DIR}/src/cuda/aux/build/libaux.a)
-set(ATTN_LIB  ${CMAKE_CURRENT_SOURCE_DIR}/src/cuda/attn/build/libattn_core.a)
+# Kernel libraries. These live in standalone projects (each with its own project() and its own
+# test executables, usable on their own), but they are added here as subprojects so that a clean
+# checkout builds with one cmake invocation instead of three. Linking targets rather than archive
+# paths also lets CMake order the dependencies itself.
+add_subdirectory(src/cuda/quant ${CMAKE_BINARY_DIR}/quant)
+add_subdirectory(src/cuda/aux   ${CMAKE_BINARY_DIR}/aux)
+add_subdirectory(src/cuda/attn  ${CMAKE_BINARY_DIR}/attn)
 
 add_executable(helios
   src/main.cpp
@@ -33,7 +36,7 @@ target_include_directories(helios PRIVATE src third_party
   ${CMAKE_CURRENT_SOURCE_DIR}/src/cuda/aux
   ${CMAKE_CURRENT_SOURCE_DIR}/src/cuda/quant)
 target_link_libraries(helios PRIVATE CUDA::cudart CUDA::cuda_driver Threads::Threads
-  ${QUANT_LIB} ${AUX_LIB} ${ATTN_LIB})
+  exl3_quant_core aux attn_core)
 
 add_executable(helios_chat_test src/core/test_chat.cpp src/core/chat.cpp src/tokenizer/tokenizer.cpp)
 target_include_directories(helios_chat_test PRIVATE src third_party)
