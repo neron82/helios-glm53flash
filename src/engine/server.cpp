@@ -37,9 +37,11 @@ constexpr const char* kModelId = "glm-5.3-flash-exl3";
 struct ServerOpts {
   std::string api_key;          // empty = no auth
   int default_max_tokens = 32768;
-  // Default reasoning effort for requests that do not set one. The model's template accepts
-  // low/high/max and treats anything else as max, so the server validates too.
-  std::string default_reasoning_effort = "max";
+  // Default reasoning effort for requests that do not set one. The model ships with "max", but at
+  // that level it will spend an entire output budget deliberating and can return no answer at all,
+  // for very little gain over "high" - so this engine defaults to "high" deliberately. The template
+  // accepts low/high/max and coerces anything else to max, hence the validation below.
+  std::string default_reasoning_effort = "high";
   int n_threads = 4;
 };
 ServerOpts g_opts;
@@ -96,7 +98,7 @@ private:
 struct ChatRequest {
   std::vector<ChatMsg> msgs;
   json tools = json::array();
-  std::string reasoning_effort = "max";
+  std::string reasoning_effort = "high";   // replaced from the server default by parse_chat
   bool thinking = true;
   bool tools_off = false;
   GenParams gen;
@@ -177,6 +179,14 @@ bool parse_chat(const json& body, ChatRequest& out, std::string& err) {
   out.reasoning_effort = g_opts.default_reasoning_effort;   // server default; request wins below
   if (body.contains("reasoning_effort") && body["reasoning_effort"].is_string())
     out.reasoning_effort = body["reasoning_effort"].get<std::string>();
+  // An unrecognised level would be coerced to "max" by the template, which is the most expensive
+  // setting possible - fall back to the server's default instead of letting a typo escalate it.
+  if (out.reasoning_effort != "low" && out.reasoning_effort != "high" &&
+      out.reasoning_effort != "max") {
+    fprintf(stderr, "[server] unknown reasoning effort '%s' (want low|high|max); using %s\n",
+            out.reasoning_effort.c_str(), g_opts.default_reasoning_effort.c_str());
+    out.reasoning_effort = g_opts.default_reasoning_effort;
+  }
   if (body.contains("chat_template_kwargs") && body["chat_template_kwargs"].is_object()) {
     const json& kw = body["chat_template_kwargs"];
     if (kw.contains("reasoning_effort") && kw["reasoning_effort"].is_string())

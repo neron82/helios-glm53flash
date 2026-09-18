@@ -27,9 +27,9 @@ API_KEY=${API_KEY:-}
 #   low  -> 488 tokens total,  664 chars of reasoning, 1355 chars of answer,  37 s
 #   high -> 1401 tokens total, 3551 chars of reasoning, 1713 chars of answer,  95 s
 #   max  -> 4000 tokens burned, 11603 chars of reasoning, NO ANSWER AT ALL, 280 s
-# "max" will spend the entire output budget thinking without ever answering, so "high" is the
-# default here and "low" is the right choice for ordinary chat.
-REASONING_EFFORT=${REASONING_EFFORT:-high}
+# "max" will spend the entire output budget thinking without ever answering. The engine's built-in
+# default is already "high"; set this only to override it (low for ordinary chat, max for analysis).
+REASONING_EFFORT=${REASONING_EFFORT:-}
 
 SERVER_LOCK_FILE=${SERVER_LOCK_FILE:-${XDG_RUNTIME_DIR:-/tmp}/helios-port-${PORT}.lock}
 # Loading 85 GB of weights and pinning the 73 GB arena takes ~40-90 s.

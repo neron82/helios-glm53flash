@@ -165,7 +165,7 @@ reaping and a wait for the previous instance's VRAM to be released:
 | `--port N` | 8080 | HTTP port |
 | `--api-key K` | none | require `Authorization: Bearer K` |
 | `--max-tokens N` | 32768 | output length used when a request omits `max_tokens`; the engine has no other output cap |
-| `--reasoning-effort L` | max | default reasoning effort (`low`/`high`/`max`) for requests that omit one |
+| `--reasoning-effort L` | **high** | default reasoning effort (`low`/`high`/`max`) for requests that omit one |
 | `--tokens N` | 64 | generation length for `gen` |
 | `--temp T` | 0.7 | sampling temperature; `0` is greedy and is the only mode MTP engages in |
 | `--prompt S` / `--prompt-file F` | — | prompt text for `gen` |
@@ -182,7 +182,7 @@ reaping and a wait for the previous instance's VRAM to be released:
 | `HELIOS_GPU_ORDER` | auto | `trunk,slots` physical GPU indices, overriding the PCIe-bandwidth ranking |
 | `HELIOS_NO_PIN` | off | do not pin the RAM arena (for low-RAM hosts; costs streaming bandwidth) |
 | `HELIOS_MAX_TOKENS` | 32768 | same as `--max-tokens` |
-| `HELIOS_REASONING_EFFORT` | max | same as `--reasoning-effort` |
+| `HELIOS_REASONING_EFFORT` | **high** | same as `--reasoning-effort` |
 | `HELIOS_PROF` | off | per-stage timing accumulators, printed at exit |
 | `HELIOS_LAYER_MAJOR` | off | alternative layer-major prefill (see Limitations) |
 
@@ -197,8 +197,11 @@ request (`reasoning_effort` or `chat_template_kwargs.reasoning_effort`) and per 
 (`--reasoning-effort`, `HELIOS_REASONING_EFFORT`), where it becomes the default for requests that do
 not set one. `/v1/models` advertises it.
 
-This matters more than it sounds: `max` will happily spend an entire output budget reasoning and never
-emit an answer. Measured on a "review this README" prompt with `max_tokens: 4000`:
+**This engine defaults to `high`, not the model's shipped `max`.** Models in this class tend to be
+released with maximum deliberation enabled, and at that setting they will spend an entire output
+budget reasoning and can return no answer at all, for very little gain over `high`. This is a
+bespoke engine tuned to a specific machine rather than a showcase, so the default is the setting that
+actually answers. Measured on a "review this README" prompt with `max_tokens: 4000`:
 
 | effort | finish | completion tokens | reasoning | answer | wall |
 |---|---|---|---|---|---|
@@ -274,6 +277,8 @@ looked like a 50% host-side stall but was a units error between chunks of differ
 - **Not bit-reproducible run to run.** Two identical greedy runs diverge around token 10, almost
   certainly from floating-point non-associativity in the MoE's accumulation order. Any A/B
   comparison must compare token IDs and allow for this rather than assume two runs are comparable.
+- **Reasoning defaults to `high` rather than the model's `max`** (see above); an unrecognised
+  `reasoning_effort` in a request falls back to the server default rather than being coerced to `max`.
 - **MTP is off by default** and only engages for `temperature == 0` with no repetition penalty or
   min-p filtering, since those would make the sampler disagree with the greedy acceptance test.
 - **A prompt that leaves no room truncates the prompt, not the output.** The KV capacity (`--cap`)
