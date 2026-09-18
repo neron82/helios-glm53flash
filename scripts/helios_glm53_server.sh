@@ -184,6 +184,11 @@ start() {
     wait_vram
     rm -f "$PID_FILE"
     mkdir -p "$(dirname "$LOG_FILE")" "$(dirname "$PID_FILE")"
+    # Each run gets a clean log; the previous one is kept as .1. Without this, a traceback from an
+    # earlier run sits in the file and looks live to anyone tailing it.
+    if [[ -s "$LOG_FILE" ]]; then
+        mv -f "$LOG_FILE" "$LOG_FILE.1"
+    fi
 
     local args=(serve "$MODEL_DIR" --host "$HOST" --port "$PORT" --cap "$CAP" --chunk "$CHUNK")
     [[ -n "$API_KEY" ]] && args+=(--api-key "$API_KEY")
