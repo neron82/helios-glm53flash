@@ -164,6 +164,7 @@ reaping and a wait for the previous instance's VRAM to be released:
 | `--host A` | 127.0.0.1 | bind address (`0.0.0.0` for LAN) |
 | `--port N` | 8080 | HTTP port |
 | `--api-key K` | none | require `Authorization: Bearer K` |
+| `--max-tokens N` | 32768 | output length used when a request omits `max_tokens`; the engine has no other output cap |
 | `--tokens N` | 64 | generation length for `gen` |
 | `--temp T` | 0.7 | sampling temperature; `0` is greedy and is the only mode MTP engages in |
 | `--prompt S` / `--prompt-file F` | — | prompt text for `gen` |
@@ -179,6 +180,7 @@ reaping and a wait for the previous instance's VRAM to be released:
 | `HELIOS_MTP_EXPERTS` | off | preload the MTP layer's 288 experts to GPU1 (costs ~288 pool slots) |
 | `HELIOS_GPU_ORDER` | auto | `trunk,slots` physical GPU indices, overriding the PCIe-bandwidth ranking |
 | `HELIOS_NO_PIN` | off | do not pin the RAM arena (for low-RAM hosts; costs streaming bandwidth) |
+| `HELIOS_MAX_TOKENS` | 32768 | same as `--max-tokens` |
 | `HELIOS_PROF` | off | per-stage timing accumulators, printed at exit |
 | `HELIOS_LAYER_MAJOR` | off | alternative layer-major prefill (see Limitations) |
 
@@ -237,6 +239,9 @@ looked like a 50% host-side stall but was a units error between chunks of differ
 
 ## Limitations and known characteristics
 
+- **Generation stops at the KV capacity rather than wrapping.** Hitting it is a `length` stop, not an
+  error, and the server stays up - but the client must read `finish_reason` to tell a truncation from
+  a natural end.
 - **No cross-request prefix caching.** Every request prefills from token 0. A 20k-token prompt costs
   ~60 s at 346 tok/s, so a chat client that re-sends its history will feel slow on long
   conversations. This is the most impactful unimplemented optimisation.
@@ -247,6 +252,11 @@ looked like a 50% host-side stall but was a units error between chunks of differ
   comparison must compare token IDs and allow for this rather than assume two runs are comparable.
 - **MTP is off by default** and only engages for `temperature == 0` with no repetition penalty or
   min-p filtering, since those would make the sampler disagree with the greedy acceptance test.
+- **A prompt that leaves no room truncates the prompt, not the output.** The KV capacity (`--cap`)
+  is a hard ceiling: generation stops when it is reached and reports `finish_reason: "length"`, and a
+  prompt longer than the remaining capacity is truncated (with a log line) so that generation has
+  somewhere to write. With `--cap 262144` and a 32k output, prompts up to roughly 229k tokens are
+  unaffected.
 - **Layer-major prefill is opt-in and partly broken** (`HELIOS_LAYER_MAJOR=1`).
 - Anything below ~16 GB free per card will start but with a reduced expert pool, which costs
   decode throughput proportionally.

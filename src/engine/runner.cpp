@@ -830,6 +830,20 @@ void Runner::moe_ffn(Layer& L, int n) {
 // ---------------------------------------------------------------- chunk driver
 
 void Runner::run_chunk(int n, int pos, bool prefill) {
+  // Hard context ceiling. The KV cache is position-addressed and sized to `cap`, so a chunk that
+  // would run past it must never execute - writing there corrupts memory rather than failing
+  // cleanly. Callers stop generation once pos_ reaches the cap; this is the backstop that holds
+  // even if a caller does not know about the limit.
+  const int cap = c_->cap();
+  if (pos >= cap) {
+    fprintf(stderr, "[runner] context full (%d/%d): skipping chunk of %d\n", pos, cap, n);
+    last_rows_ = 0;
+    return;
+  }
+  if (pos + n > cap) {
+    n = cap - pos;
+    fprintf(stderr, "[runner] clamping chunk to %d tokens (context limit %d)\n", n, cap);
+  }
   last_rows_ = n;
   (void)prefill;
   Device& g0 = Engine::instance().gpu(0);
@@ -1419,7 +1433,7 @@ std::vector<int> Runner::generate_mtp(const std::vector<int>& prompt, const GenP
     if (on_token && !on_token(tok)) stop = true;
   };
   if (t0 != tk_->eos_id()) emit(t0);
-  while (!stop && (int)out.size() < p.max_tokens && t0 != tk_->eos_id()) {
+  while (!stop && (int)out.size() < p.max_tokens && t0 != tk_->eos_id() && pos_ < c_->cap()) {
     double t_round = now_ms();
     // ---- draft k tokens from the trunk state + the token just emitted
     int prev = t0;
@@ -1575,7 +1589,9 @@ std::vector<int> Runner::generate(const std::vector<int>& prompt, const GenParam
   Sampler smp;
   smp.reset(p.seed ? p.seed : 1234);
   std::vector<int> recent = prompt;
+  const int cap = c_->cap();
   for (int i = 0; i < p.max_tokens; i++) {
+    if (pos_ >= cap) break;          // no room left in the KV cache; reported as a length stop
     int tok = smp.sample(w0.host_logits, m_->cfg.vocab, p, recent);
     if (tok == tk_->eos_id()) break;
     out.push_back(tok);

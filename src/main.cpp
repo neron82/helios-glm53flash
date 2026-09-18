@@ -75,6 +75,9 @@ int main(int argc, char** argv) {
   }
   if (cmd == "load" || cmd == "serve" || cmd == "gen") {
     int cap = 262144, port = 8080, max_chunk = 256;
+    // Default output length for requests that omit `max_tokens`. The engine imposes no output cap of
+    // its own beyond the KV capacity, so this only bounds what an omission produces.
+    int default_max_tokens = getenv("HELIOS_MAX_TOKENS") ? atoi(getenv("HELIOS_MAX_TOKENS")) : 0;
     const char* host = "127.0.0.1";
     std::string api_key;
     bool ram_only = false;
@@ -89,6 +92,7 @@ int main(int argc, char** argv) {
       else if (a == "--port" && i + 1 < argc) port = atoi(argv[++i]);
       else if (a == "--host" && i + 1 < argc) host = argv[++i];
       else if (a == "--api-key" && i + 1 < argc) api_key = argv[++i];
+      else if (a == "--max-tokens" && i + 1 < argc) default_max_tokens = atoi(argv[++i]);
       else if (a == "--chunk" && i + 1 < argc) max_chunk = atoi(argv[++i]);
       else if (a == "--tokens" && i + 1 < argc) max_tokens = atoi(argv[++i]);
       else if (a == "--temp" && i + 1 < argc) temperature = atof(argv[++i]);
@@ -169,7 +173,7 @@ int main(int argc, char** argv) {
       return 0;
     }
     slots.print_stats();
-    return run_server(runner, tk, host, port, 8, api_key);
+    return run_server(runner, tk, host, port, 8, api_key, default_max_tokens);
   }
   if (cmd == "load") {
     bool ram_only = argc > 3 && !strcmp(argv[3], "--ram-only");

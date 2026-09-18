@@ -36,10 +36,11 @@ constexpr const char* kModelId = "glm-5.3-flash-exl3";
 
 struct ServerOpts {
   std::string api_key;          // empty = no auth
-  int default_max_tokens = 2048;
+  int default_max_tokens = 32768;
   int n_threads = 4;
 };
 ServerOpts g_opts;
+int g_ctx_cap = 0;      // KV capacity in tokens, from the runner; advertised in /v1/models
 
 std::string new_id(const char* prefix) {
   static std::atomic<uint64_t> ctr{0};
@@ -198,24 +199,38 @@ struct GenOutcome {
 }  // namespace
 
 int run_server(Runner& runner, Tokenizer& tk, const std::string& host, int port, int n_threads,
-               const std::string& api_key) {
+               const std::string& api_key, int default_max_tokens) {
   httplib::Server srv;
   g_opts.api_key = api_key;
   g_opts.n_threads = n_threads;
+  if (default_max_tokens > 0) g_opts.default_max_tokens = default_max_tokens;
+  g_ctx_cap = runner.context_cap();
   static std::mutex gen_mu;          // one generation at a time (single-sequence engine)
   static std::atomic<uint64_t> served{0};
+
+  // A stop caused by running out of KV capacity is reported as "length", like a max_tokens stop:
+  // the caller must be able to tell truncation from a natural end.
+  auto finish_reason = [&](int completion_tokens, int max_tokens) -> const char* {
+    if (completion_tokens >= max_tokens) return "length";
+    if (runner.context_cap() > 0 && runner.pos() >= runner.context_cap()) return "length";
+    return "stop";
+  };
 
   srv.Get("/health", [](const httplib::Request&, httplib::Response& res) {
     res.set_content("{\"status\":\"ok\"}", "application/json");
   });
 
   srv.Get("/v1/models", [](const httplib::Request&, httplib::Response& res) {
+    // Advertise the limits as well: clients that read them can size their own request controls
+    // instead of guessing, and `max_tokens` here is what an omitted request field will use.
     json j{{"object", "list"},
            {"data", json::array({{{"id", kModelId},
                                   {"object", "model"},
                                   {"created", 0},
                                   {"owned_by", "helios"},
-                                  {"root", kModelId}}})}};
+                                  {"root", kModelId},
+                                  {"max_tokens", g_opts.default_max_tokens},
+                                  {"context_length", g_ctx_cap}}})}};
     res.set_content(j.dump(), "application/json");
   });
 
@@ -314,7 +329,7 @@ int run_server(Runner& runner, Tokenizer& tk, const std::string& host, int port,
       }
       const char* finish = !out.tool_calls.empty() ? "tool_calls"
                            : out.hit_stop ? "stop"
-                           : (out.completion_tokens >= req.gen.max_tokens ? "length" : "stop");
+                           : finish_reason(out.completion_tokens, req.gen.max_tokens);
       json outj{{"id", id},         {"object", "chat.completion"},
                 {"created", created}, {"model", kModelId},
                 {"choices", json::array({{{"index", 0},
@@ -392,7 +407,7 @@ int run_server(Runner& runner, Tokenizer& tk, const std::string& host, int port,
           });
           const char* finish = !out.tool_calls.empty() ? "tool_calls"
                                : out.hit_stop ? "stop"
-                               : (out.completion_tokens >= req.gen.max_tokens ? "length" : "stop");
+                               : finish_reason(out.completion_tokens, req.gen.max_tokens);
           if (alive) {
             json last = base;
             last["choices"] = json::array({{{"index", 0}, {"delta", json::object()},
@@ -453,7 +468,7 @@ int run_server(Runner& runner, Tokenizer& tk, const std::string& host, int port,
     out.content = parsed.content;
     out.reasoning = parsed.reasoning;
     out.completion_tokens = (int)ids.size();
-    const char* finish = out.completion_tokens >= p.max_tokens ? "length" : "stop";
+    const char* finish = finish_reason(out.completion_tokens, p.max_tokens);
     json outj{{"id", new_id("cmpl")},
               {"object", "text_completion"},
               {"created", (int64_t)std::chrono::duration_cast<std::chrono::seconds>(

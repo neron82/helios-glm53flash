@@ -28,6 +28,7 @@ public:
   void decode(const std::vector<int>& ids);         // process 1..k tokens (extends sequence)
   const half* logits_dev() const;                   // logits of the last decoded token
   int pos() const { return pos_; }
+  int context_cap() const { return c_ ? c_->cap() : 0; }
 
   // Full generation loop (prompt already tokenized). on_token may return false to stop.
   std::vector<int> generate(const std::vector<int>& prompt, const GenParams& p,
@@ -179,8 +180,8 @@ private:
   Timings tm_;
 };
 
-// OpenAI-compatible HTTP front end (server.cpp).
+// OpenAI-compatible HTTP front end (server.cpp). default_max_tokens <= 0 keeps the built-in default.
 int run_server(Runner& runner, Tokenizer& tk, const std::string& host, int port, int n_threads = 4,
-               const std::string& api_key = std::string());
+               const std::string& api_key = std::string(), int default_max_tokens = 0);
 
 }  // namespace helios
