@@ -57,7 +57,12 @@ MIN_FREE_MIB=${MIN_FREE_MIB:-16000}
 # cap 524288 / chunk 8192 used 22.6 GB - and reproduce both to within 5 MiB. Waiting for this turns an
 # out-of-memory abort into a clear message; if something else has to share GPU0 (a small model living
 # alongside the engine), lower CAP or CHUNK until GPU0_NEED_MIB plus that model fits in 24 GB.
-GPU0_NEED_MIB=${GPU0_NEED_MIB:-$(( 6400 + CHUNK * 1287 / 1000 + CAP * 11874 / 1000000 ))}
+#
+# The 512 MiB term is the CUDA context: this check reads nvidia-smi's "free", while the requirement
+# above was fitted to cudaMemGetInfo's "used", and the two differ by exactly that much (measured: at
+# cap 524288 / chunk 8192 nvidia-smi reports 1408 MiB free where CUDA has 952). A neighbour needs its
+# own context too, so budget it separately.
+GPU0_NEED_MIB=${GPU0_NEED_MIB:-$(( 512 + 6400 + CHUNK * 1287 / 1000 + CAP * 11874 / 1000000 ))}
 VRAM_WAIT=${VRAM_WAIT:-60}
 
 COMMAND=start
