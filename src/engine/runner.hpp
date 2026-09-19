@@ -72,6 +72,7 @@ private:
   // (from a snapshot if the prompt diverges from the history, or keeping it if it merely extends it)
   // and returning that position. `hist_` is the token sequence the caches currently hold.
   int prefix_begin(const std::vector<int>& prompt);
+  size_t kda_state_bytes() const;    // one KDA layer's conv window + recurrent matrix
   void snap_capture(int pos);        // stage the KDA state and start its async copy into a host slot
   void snap_restore(int slot);       // copy a snapshot back into the KDA layers
   void kda_state_io(char* buf, bool save, cudaStream_t s);  // whole-model conv+recurrent state
@@ -84,33 +85,6 @@ private:
   void dense_mlp(Layer& L, int n);
   void moe_ffn(Layer& L, int n);
   void final_head(int n);   // n = rows in c_->xh; logits come from the LAST row
-
-  // ---- MTP speculative decoding ----
-  // The MTP head is a PLAIN residual block (no mHC) fed by eh_proj(cat(hnorm(embed), enorm(trunk_h))),
-  // so it reuses mla_layer/ffn_layer on a synthetic Layer whose mla_ord is the draft cache slot.
-  // Its 288 experts are fully resident at m_->mtp.experts_gpu1, bypassing the slot manager entirely.
-  bool mtp_ready_ = false;
-  Layer mtp_layer_;
-  half* mtp_ckpt_ = nullptr;       // KDA conv+recurrent state checkpoint (fp16-free, raw bytes)
-  half* mtp_hid_ = nullptr;        // [4096] fp16 draft hidden state (never aliases trunk buffers)
-  half* logits_multi_ = nullptr;   // [(k+1), vocab] fp16 verify logits
-  half* host_logits_multi_ = nullptr;  // pinned host mirror
-  float* logits32_multi_ = nullptr;// [(k+1), vocab] fp32
-  // KDA state capture for draft verification: the recurrent state must be restored to the round's
-  // start and advanced over exactly the ACCEPTED prefix. The KDA layer reads its input from c_->xa,
-  // so the inputs for the verified rows are captured too and replayed.
-  bool capture_ = false;           // kda_layer checkpoints state + inputs while set
-  int n_capture_ = 0;              // rows captured per KDA layer
-  half* kda_in_ = nullptr;         // [n_kda][maxcap][4096] fp16 captured layer inputs
-  size_t kda_in_stride_ = 0;
-  size_t kda_state_bytes() const;
-  void kda_capture_begin(int n);   // snapshot every KDA layer's state + declare the row count
-  void kda_rollback(int n, int pos);// restore snapshots, replay n accepted rows per layer
-  void mtp_build();
-  int mtp_step(int tok, int pos);  // one draft token; writes the draft KV at `pos`
-  void final_head_multi(int n);    // logits for ALL n rows (verify), into logits_multi_
-  std::vector<int> generate_mtp(const std::vector<int>& prompt, const GenParams& p,
-                                const std::function<bool(int)>& on_token);
 
   Model* m_ = nullptr;
   Cache* c_ = nullptr;
@@ -183,7 +157,6 @@ private:
     half* hc_collapsed = nullptr;
     float* rms_dummy = nullptr;
     half* norm_out = nullptr;    // [max,4096] fp16
-    half* mtp_in = nullptr;      // [8192] fp16: cat(hnorm(embed), enorm(hidden)) for eh_proj
     void* conv_w_bf16 = nullptr; // per-KDA-layer bf16 copies, [n_kda][24576*4]
     void* dt_bias_bf16 = nullptr;
     void* onorm_bf16 = nullptr;

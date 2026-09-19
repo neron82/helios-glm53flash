@@ -13,11 +13,10 @@ int Cache::raw_ring_rows(int cap, int max_chunk) {
   return rows;
 }
 
-CachePlan Cache::plan(const Config& cfg, int cap, bool mtp_draft, int max_chunk) {
+CachePlan Cache::plan(const Config& cfg, int cap, int max_chunk) {
   CachePlan p;
   p.cap = cap;
   for (int l = 0; l < cfg.n_layers; l++) (cfg.attn[l] == MLA ? p.n_mla : p.n_kda)++;
-  if (mtp_draft && cfg.has_mtp) p.n_mla++;     // +1 slot for the MTP draft layer
   size_t b = 0;
   const int ring = raw_ring_rows(cap, max_chunk);
   b += (size_t)p.n_mla * cap * 512 * 2;                  // ckv fp16
@@ -30,12 +29,11 @@ CachePlan Cache::plan(const Config& cfg, int cap, bool mtp_draft, int max_chunk)
   return p;
 }
 
-bool Cache::init(const Model& m, int cap, int max_chunk, bool mtp_draft) {
+bool Cache::init(const Model& m, int cap, int max_chunk) {
   Device& g0 = Engine::instance().gpu(0);
   HELIOS_CUDA_CHECK(cudaSetDevice(g0.phys_idx()));
-  CachePlan p = plan(m.cfg, cap, mtp_draft, max_chunk);
+  CachePlan p = plan(m.cfg, cap, max_chunk);
   raw_rows_ = raw_ring_rows(cap, max_chunk);
-  mtp_ord_ = (mtp_draft && m.cfg.has_mtp) ? p.n_mla - 1 : -1;
   cap_ = cap;
   n_mla_ = p.n_mla; n_kda_ = p.n_kda;
 

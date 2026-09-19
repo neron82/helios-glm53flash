@@ -123,20 +123,6 @@ bool Runner::init(Model& m, Cache& c, SlotMgr& sm, Tokenizer* tk, int max_chunk)
   w0.hc_comb = (float*)A0((size_t)M * 16 * 4);
   w0.hc_collapsed = (half*)A0((size_t)M * 4096 * 2);
   w0.norm_out = (half*)A0((size_t)M * 4096 * 2);
-  w0.mtp_in = (half*)A0((size_t)8192 * 2);
-  if (mtp_enabled()) {
-    const int rows = 8;                                  // max verify batch (k+1) when drafting
-    mtp_hid_ = (half*)A0((size_t)4096 * 2);
-    logits_multi_ = (half*)A0((size_t)rows * m.cfg.vocab * 2);
-    HELIOS_CUDA_CHECK(cudaMallocHost((void**)&host_logits_multi_, (size_t)rows * m.cfg.vocab * 2));
-    logits32_multi_ = (float*)A0((size_t)rows * m.cfg.vocab * 4);
-    // KDA conv + recurrent state for every KDA layer: the draft round verifies k+1 tokens at once,
-    // so the state must be restorable to the round's start before re-running only the accepted prefix.
-    size_t per = (size_t)24576 * 4 * 2 + (size_t)64 * 128 * 128 * 4;
-    mtp_ckpt_ = (half*)A0((size_t)c.n_kda() * per, 1024);
-    kda_in_stride_ = (size_t)8 * 4096 * 2;             // up to 8 verified rows per layer
-    kda_in_ = (half*)A0((size_t)c.n_kda() * kda_in_stride_);
-  }
   w0.conv_w_bf16 = A0((size_t)n_kda * 24576 * 4 * 2);
   w0.dt_bias_bf16 = A0((size_t)n_kda * 8192 * 2);
   w0.onorm_bf16 = A0((size_t)n_kda * 128 * 2);
@@ -279,7 +265,6 @@ bool Runner::init(Model& m, Cache& c, SlotMgr& sm, Tokenizer* tk, int max_chunk)
       printf("[runner] prefix cache: snapshots disabled (extension-only reuse)\n");
   }
   reset();
-  mtp_build();
   return true;
 }
 
@@ -397,18 +382,6 @@ void Runner::kda_layer(Layer& L, int n, int pos) {
   auto kmark = [&](int i) { if (kprof) cudaEventRecord(kev[i], s); };
   kmark(0);
   int kda_ord = L.kda_ord;
-  if (capture_) {
-    // Snapshot the pre-state and this layer's input rows. dump(reason) is *not* used here: this runs
-    // only for the k+1-token verification batch, and the snapshot must precede any state update.
-    const size_t per = kda_state_bytes();
-    char* ck = (char*)mtp_ckpt_ + (size_t)kda_ord * per;
-    HELIOS_CUDA_CHECK(cudaMemcpyAsync(ck, c_->kda_conv(kda_ord), (size_t)24576 * 4 * 2,
-                                      cudaMemcpyDeviceToDevice, s));
-    HELIOS_CUDA_CHECK(cudaMemcpyAsync(ck + (size_t)24576 * 4 * 2, c_->kda_rec(kda_ord),
-                                      (size_t)64 * 128 * 128 * 4, cudaMemcpyDeviceToDevice, s));
-    HELIOS_CUDA_CHECK(cudaMemcpyAsync((char*)kda_in_ + (size_t)kda_ord * kda_in_stride_, c_->xa,
-                                      (size_t)n_capture_ * 4096 * 2, cudaMemcpyDeviceToDevice, s));
-  }
   // 1) qkv projection (EXL3, 4-bit) with input/output Hadamard
   exl3::GroupWords qw{(const uint16_t*)L.kda.qkv.trellis, L.kda.qkv.suh, L.kda.qkv.svh, L.kda.qkv.mul1};
   int shape = exl3::gemm(w0.qkv, c_->xa, qw, n, 24576, 4096, L.kda.qkv.K, true, s, w0.a_had, false, 0, 0);
@@ -784,12 +757,8 @@ void Runner::moe_ffn(Layer& L, int n) {
   // will touch, and it dereferences the table entry for each of them unconditionally. Driving the
   // acquire loop from the same counts guarantees every expert the kernel uses is resident.
   chk1("pre-slot");
-  // The MTP draft layer's experts are fully resident on GPU1 and must NOT touch the slot pool: no
-  // acquire, and crucially no note_request (the census ranks the trunk's streaming policy, and the
-  // draft layer's routing would pollute it).
-  const bool is_mtp = (L.index == m_->cfg.mtp_layer) && m_->mtp.experts_gpu1 != nullptr;
   int acquired = 0;
-  if (!is_mtp) {
+  {
     sm_->begin_step();
     for (int e = 0; e < E; e++) {
       if (dev_cnt[e] <= 0) continue;
@@ -801,16 +770,10 @@ void Runner::moe_ffn(Layer& L, int n) {
   // pointer tables
   {
     static std::vector<const void*> host(9 * 288);
-    size_t stride = is_mtp ? m_->slot_stride : sm_->stride();
     for (int e = 0; e < E; e++) {
-      const char* base;
-      if (is_mtp) {
-        base = (const char*)m_->mtp.experts_gpu1 + (size_t)e * stride;
-      } else {
-        int slot = sm_->find(L.index, e);
-        base = slot >= 0 ? sm_->slot_ptr(slot)
-                         : (dev_cnt[e] > 0 ? (const char*)sm_->zero_slab() : nullptr);
-      }
+      int slot = sm_->find(L.index, e);
+      const char* base = slot >= 0 ? sm_->slot_ptr(slot)
+                                   : (dev_cnt[e] > 0 ? (const char*)sm_->zero_slab() : nullptr);
       host[0 * E + e] = base ? base + moe_off_[0] : nullptr;
       host[1 * E + e] = base ? base + moe_off_[1] : nullptr;
       host[2 * E + e] = base ? base + moe_off_[2] : nullptr;
@@ -820,14 +783,13 @@ void Runner::moe_ffn(Layer& L, int n) {
       host[6 * E + e] = base ? base + moe_off_[8] : nullptr;
       host[7 * E + e] = base ? base + moe_off_[9] : nullptr;
       host[8 * E + e] = base ? base + moe_off_[10] : nullptr;
-      (void)stride;
     }
     HELIOS_CUDA_CHECK(cudaMemcpyAsync(w1.tables, host.data(), 9 * E * sizeof(void*),
                                       cudaMemcpyHostToDevice, s1));
   }
   // Fail fast if a needed expert has no resident slot: the kernel dereferences the table entries
   // unconditionally, so a null pointer there is an illegal access instead of a clear error.
-  if (!is_mtp) {
+  {
     int missing = 0, first = -1;
     for (int e = 0; e < E; e++)
       if (dev_cnt[e] > 0 && sm_->find(L.index, e) < 0) { missing++; if (first < 0) first = e; }
@@ -1395,6 +1357,12 @@ void Runner::final_head(int n) {
 
 const half* Runner::logits_dev() const { return (const half*)w0.logits16; }
 
+// Bytes of one KDA layer's non-position-addressed state (conv window + recurrent matrix): the unit the
+// prefix-cache snapshot ring copies.
+size_t Runner::kda_state_bytes() const {
+  return (size_t)24576 * 4 * 2 + (size_t)64 * 128 * 128 * 4;
+}
+
 void Runner::prefill(const std::vector<int>& ids) {
   double t0 = now_ms();
   int n = (int)ids.size();
@@ -1504,291 +1472,8 @@ void Runner::decode(const std::vector<int>& ids) {
   tm_.decode_tokens += n;
 }
 
-size_t Runner::kda_state_bytes() const {
-  return (size_t)24576 * 4 * 2 + (size_t)64 * 128 * 128 * 4;
-}
-
-void Runner::kda_capture_begin(int n) {
-  if (!mtp_ready_) return;
-  n_capture_ = n > 8 ? 8 : n;
-  capture_ = true;
-}
-
-// Restore every KDA layer to the snapshot taken at the round's start, then advance it over exactly
-// the accepted rows by replaying their captured inputs. Layer order matters: each layer's replay is
-// self-contained (it only touches its own state), but the inputs were captured per layer.
-void Runner::kda_rollback(int n, int pos) {
-  capture_ = false;
-  if (!mtp_ready_ || n <= 0) return;
-  Device& g0 = Engine::instance().gpu(0);
-  DevGuard guard(g0.phys_idx());
-  cudaStream_t s = s0_stream();
-  int ord = 0;
-  for (int l = 0; l < m_->cfg.n_layers; l++) {
-    Layer& L = m_->layers[l];
-    if (L.kind != KDA || L.kda_ord < 0) continue;
-    const int o = L.kda_ord;
-    const size_t per = kda_state_bytes();
-    char* ck = (char*)mtp_ckpt_ + (size_t)o * per;
-    HELIOS_CUDA_CHECK(cudaMemcpyAsync(c_->kda_conv(o), ck, (size_t)24576 * 4 * 2,
-                                      cudaMemcpyDeviceToDevice, s));
-    HELIOS_CUDA_CHECK(cudaMemcpyAsync(c_->kda_rec(o), ck + (size_t)24576 * 4 * 2,
-                                      (size_t)64 * 128 * 128 * 4, cudaMemcpyDeviceToDevice, s));
-    HELIOS_CUDA_CHECK(cudaMemcpyAsync(c_->xa, (char*)kda_in_ + (size_t)o * kda_in_stride_,
-                                      (size_t)n * 4096 * 2, cudaMemcpyDeviceToDevice, s));
-    kda_layer(L, n, pos);
-    ord++;
-  }
-  (void)ord;
-}
-
-// Greedy MTP speculative decoding. Verified exactly against the non-drafting path: with temperature
-// 0 the sampler is argmax, the drafts are verified by the trunk's own argmax, and only trunk-verified
-// tokens are ever emitted - so HELIOS_MTP=1 must produce token-identical output to HELIOS_MTP=0.
-std::vector<int> Runner::generate_mtp(const std::vector<int>& prompt, const GenParams& p,
-                                      const std::function<bool(int)>& on_token) {
-  // k drafts per round (k+1 rows verified). HELIOS_MTP_K=0 disables drafting: the loop then runs
-  // exactly like the baseline (verify one token, take the trunk's own next token), which isolates a
-  // loop/emission bug from a draft/rollback bug. Default 3.
-  const int k = getenv("HELIOS_MTP_K") ? atoi(getenv("HELIOS_MTP_K")) : 3;
-  const int vocab = m_->cfg.vocab;
-  // The draft layer's cache and the KDA rollback are not part of the prefix cache, so this path
-  // starts from a clean sequence: it writes KV rows for rejected drafts and then rolls back, so the
-  // resident history it would leave behind is not the token sequence the planes describe.
-  reset();
-  prefill(prompt);
-  std::vector<int> out;
-  auto argmax_of = [&](const half* lg) {
-    int best = 0; float bv = -1e30f;
-    for (int i = 0; i < vocab; i++) {
-      float v = __half2float(lg[i]);
-      if (v > bv) { bv = v; best = i; }
-    }
-    return best;
-  };
-  auto seed_draft_hidden = [&](int row) {
-    // the MTP input pairs the trunk's collapsed state at `row` with the embedding of the last token
-    const half* src = c_->xh + (size_t)row * 4096;
-    HELIOS_CUDA_CHECK(cudaMemcpyAsync(mtp_hid_, src, (size_t)4096 * 2,
-                                      cudaMemcpyDeviceToDevice, s0_stream()));
-  };
-  seed_draft_hidden(last_rows_ - 1);                // state that produced the post-prompt logits
-  int t0 = argmax_of(w0.host_logits);
-  int seed_row = last_rows_ - 1;
-  long long drafted = 0, accepted_total = 0, rounds = 0;
-  // ---- diagnostics for the accept-rate question (HELIOS_MTP_STATS) -------------------------------
-  // The draft layer keeps its own KV cache and nothing fills it over the prompt, so its attention may
-  // be running over rows that were never written. Dump a few rows of the draft cache next to the
-  // trunk's (control) so that is a measurement rather than a guess.
-  const bool stats = getenv("HELIOS_MTP_STATS") != nullptr;
-  if (stats) {
-    auto peek = [&](const char* what, const half* base, int rows) {
-      std::vector<half> h((size_t)rows * 512);
-      HELIOS_CUDA_CHECK(cudaMemcpy(h.data(), base, h.size() * 2, cudaMemcpyDeviceToHost));
-      double sum = 0; int nz = 0;
-      for (half v : h) { float f = __half2float(v); sum += f * f; if (f != 0.f) nz++; }
-      fprintf(stderr, "[mtpstats] %s: %zu values, rms=%.5f, nonzero=%d/%zu\n", what, h.size(),
-              sqrt(sum / (double)h.size()), nz, h.size());
-    };
-    peek("trunk ckv rows 0..15 (control)", c_->ckv(0), 16);
-    if (c_->mtp_ord() >= 0) peek("draft ckv rows 0..15", c_->ckv(c_->mtp_ord()), 16);
-    if (c_->mtp_ord() >= 0 && pos_ > 32)
-      peek("draft ckv rows at last_pos-16..", c_->ckv(c_->mtp_ord()) + (size_t)(pos_ - 16) * 512, 16);
-  }
-  // Rank of the trunk's token within the draft's own top-N: if the head is merely weak it still ranks
-  // the right token highly, whereas broken inputs make it rank it like chance (1 in 154880).
-  std::vector<std::array<int, 8>> draft_top8;
-  long long rank_hist[9] = {};
-  // `t0` is the pending token: produced by the trunk (from the prefill, then from each round's own
-  // bonus) and emitted HERE, exactly once. The round below emits only the accepted drafts plus the
-  // new bonus, so every round consumes `a+1` verified positions and emits `a+1` new tokens.
-  bool stop = false;
-  auto emit = [&](int tok) {
-    if (stop || (int)out.size() >= p.max_tokens) return;
-    out.push_back(tok);
-    if (on_token && !on_token(tok)) stop = true;
-  };
-  if (t0 != tk_->eos_id()) emit(t0);
-  while (!stop && (int)out.size() < p.max_tokens && t0 != tk_->eos_id() && pos_ < c_->cap()) {
-    double t_round = now_ms();
-    // ---- draft k tokens from the trunk state + the token just emitted
-    int prev = t0;
-    std::vector<int> drafts;
-    draft_top8.clear();
-    for (int i = 0; i < k && (int)out.size() + (int)drafts.size() < p.max_tokens; i++) {
-      int d = mtp_step(prev, pos_ + i);
-      drafts.push_back(d);
-      if (stats) {                                   // mtp_step leaves the draft's logits in host_logits
-        std::array<int, 8> top{};
-        for (int j = 0; j < 8; j++) {
-          int best = -1; float bv = -1e30f;
-          for (int v = 0; v < vocab; v++) {
-            if (__half2float(w0.host_logits[v]) <= bv) continue;
-            bool seen = false;
-            for (int q = 0; q < j; q++) if (top[q] == v) seen = true;
-            if (!seen) { bv = __half2float(w0.host_logits[v]); best = v; }
-          }
-          top[j] = best < 0 ? 0 : best;
-        }
-        draft_top8.push_back(top);
-      }
-      prev = d;
-    }
-    drafted += (long long)drafts.size();
-    // ---- verify all of them in ONE trunk forward (this is where the win is: M = k+1, not k x M=1)
-    std::vector<int> vbatch;
-    vbatch.push_back(t0);
-    for (int d : drafts) vbatch.push_back(d);
-    const int vlen = (int)vbatch.size();
-    const int start_pos = pos_;
-    kda_capture_begin(vlen);
-    HELIOS_CUDA_CHECK(cudaMemcpyAsync(w0.tokens, vbatch.data(), vlen * 4, cudaMemcpyHostToDevice,
-                                      s0_stream()));
-    run_chunk(vlen, start_pos, false);
-    pos_ += vlen;
-    final_head_multi(vlen);
-    tm_.decode_tokens += vlen;
-    // ---- accept the longest prefix the trunk agrees with (greedy)
-    int a = 0;
-    while (a < (int)drafts.size() && argmax_of(host_logits_multi_ + (size_t)a * vocab) == drafts[a]) a++;
-    const int bonus = argmax_of(host_logits_multi_ + (size_t)a * vocab);
-    if (stats) {
-      for (int i = 0; i < (int)draft_top8.size(); i++) {
-        int want = argmax_of(host_logits_multi_ + (size_t)i * vocab);
-        int rank = 8;                                  // 8 means "outside the draft's top-8"
-        for (int j = 0; j < 8; j++) if (draft_top8[i][j] == want) { rank = j; break; }
-        rank_hist[rank]++;
-      }
-    }
-    rounds++;
-    accepted_total += a;
-    // ---- emit only the newly verified tokens: the accepted drafts and the trunk's own next token
-    for (int i = 0; i < a; i++) emit(drafts[i]);
-    emit(bonus);
-    if (stop) break;
-    // ---- roll the state back to the accepted prefix; the accepted rows' KV is already correct
-    //      (the recurrence is causal), only the recurrent state ran past the end.
-    const int accepted = a + 1;
-    if (accepted < vlen) {
-      c_->set_len(start_pos + accepted);
-      pos_ = start_pos + accepted;
-      kda_rollback(accepted, start_pos);
-      seed_row = a;                                  // row a produced `bonus`
-    } else {
-      seed_row = accepted - 1;
-    }
-    seed_draft_hidden(seed_row);
-    t0 = bonus;
-    tm_.decode_ms += now_ms() - t_round;
-  }
-  if (stats) {
-    fprintf(stderr, "[mtpstats] rank of the trunk's token in the draft's top-8 (k=%d): ", k);
-    for (int i = 0; i < 8; i++) fprintf(stderr, "%d:%.0f%% ", i + 1, 100.0 * rank_hist[i] /
-                                          (double)std::max<long long>(1, drafted));
-    fprintf(stderr, "outside:%.0f%%\n", 100.0 * rank_hist[8] /
-            (double)std::max<long long>(1, drafted));
-  }
-  if (getenv("HELIOS_MTP_TOKENS")) {
-    fprintf(stderr, "[toks]");
-    for (int t : out) fprintf(stderr, " %d", t);
-    fprintf(stderr, "\n");
-  }
-  if (getenv("HELIOS_MTP_STATS"))
-    fprintf(stderr, "[mtp] rounds=%lld drafts=%lld accepted=%lld (%.1f%% ) avg emitted/round=%.2f\n",
-            rounds, drafted, accepted_total, drafted ? 100.0 * (double)accepted_total / (double)drafted : 0.0,
-            rounds ? (double)out.size() / (double)rounds : 0.0);
-  return out;
-}
-
-void Runner::mtp_build() {
-  if (!mtp_enabled() || !m_->cfg.has_mtp || c_->mtp_ord() < 0 || !m_->mtp.experts_gpu1) return;
-  mtp_layer_ = Layer{};
-  mtp_layer_.index = m_->cfg.mtp_layer;
-  mtp_layer_.kind = MLA;
-  mtp_layer_.moe = true;
-  mtp_layer_.mla_ord = c_->mtp_ord();
-  mtp_layer_.mla = m_->mtp.mla;
-  mtp_layer_.idx = m_->mtp.idx;
-  mtp_layer_.moe_w = m_->mtp.moe_w;
-  mtp_layer_.input_ln = m_->mtp.input_ln;
-  mtp_layer_.post_ln = m_->mtp.post_ln;
-  mtp_ready_ = true;
-  printf("[mtp] draft layer ready: mla_ord=%d (own KV slot), 288 experts resident on GPU1\n",
-         c_->mtp_ord());
-}
-
-// One MTP draft step. The block is a plain residual layer: it reads the previous hidden (the trunk's
-// collapsed state `c_->xh` on the first step of a round, the previous block output afterwards) plus
-// the previously drafted token, and returns the next drafted token. Everything it touches is a
-// dedicated buffer or the MTP cache slot, so it cannot disturb trunk state.
-int Runner::mtp_step(int tok, int pos) {
-  Device& g0 = Engine::instance().gpu(0);
-  DevGuard guard(g0.phys_idx());
-  cudaStream_t s = s0_stream();
-  // x = hnorm(embed(tok))   (embedding FIRST in the concat - qwen3_5_mtp.py: cat((x, y), dim=-1))
-  HELIOS_CUDA_CHECK(cudaMemcpyAsync(w0.tokens, &tok, 4, cudaMemcpyHostToDevice, s));
-  glue::embed_gather(m_->embed, w0.tokens, 1, w0.norm_out, 4096, s);
-  aux::rms_norm(w0.norm_out, aux::kHalf, m_->mtp.hnorm, aux::kHalf, w0.mtp_in, aux::kHalf,
-                1, 4096, m_->cfg.rms_eps, 0.0f, 1.0f, false, 1, s);
-  // y = enorm(target_hidden)
-  aux::rms_norm(mtp_hid_, aux::kHalf, m_->mtp.enorm, aux::kHalf, w0.mtp_in + 4096, aux::kHalf,
-                1, 4096, m_->cfg.rms_eps, 0.0f, 1.0f, false, 1, s);
-  // h = eh_proj(cat(x, y))  [8192] -> [4096]
-  exl3::GroupWords ep{(const uint16_t*)m_->mtp.eh_proj.trellis, m_->mtp.eh_proj.suh,
-                      m_->mtp.eh_proj.svh, m_->mtp.eh_proj.mul1};
-  exl3::gemm(w0.qkv, w0.mtp_in, ep, 1, 4096, 8192, m_->mtp.eh_proj.K, true, s, w0.a_had);
-  glue::cast_f32_f16(w0.qkv, mtp_hid_, 4096, s);
-  // attn: norm -> MLA (draft cache slot, visibility bounded by `pos`) -> plain residual add
-  aux::rms_norm(mtp_hid_, aux::kHalf, m_->mtp.input_ln, aux::kHalf, c_->xa, aux::kHalf,
-                1, 4096, m_->cfg.rms_eps, 0.0f, 1.0f, false, 1, s);
-  mla_layer(mtp_layer_, 1, pos);
-  aux::add(mtp_hid_, aux::kHalf, w0.attn_out16, aux::kHalf, mtp_hid_, aux::kHalf, 4096, 4096, s);
-  // ffn: norm -> MoE (resident experts, no slot manager, no census traffic) -> plain residual add
-  aux::rms_norm(mtp_hid_, aux::kHalf, m_->mtp.post_ln, aux::kHalf, c_->xf, aux::kHalf,
-                1, 4096, m_->cfg.rms_eps, 0.0f, 1.0f, false, 1, s);
-  ffn_layer(mtp_layer_, 1, 0);
-  aux::add(mtp_hid_, aux::kHalf, w0.ffn_out16, aux::kHalf, mtp_hid_, aux::kHalf, 4096, 4096, s);
-  // head: shared_head.norm -> the SHARED lm_head
-  aux::rms_norm(mtp_hid_, aux::kHalf, m_->mtp.shared_head_norm, aux::kHalf, w0.norm_out, aux::kHalf,
-                1, 4096, m_->cfg.rms_eps, 0.0f, 1.0f, false, 1, s);
-  exl3::GroupWords hw{(const uint16_t*)m_->lm_head.trellis, m_->lm_head.suh, m_->lm_head.svh,
-                      m_->lm_head.mul1};
-  exl3::gemm(w0.logits32, w0.norm_out, hw, 1, m_->cfg.vocab, 4096, m_->lm_head.K, true, s, w0.a_had);
-  glue::cast_f32_f16(w0.logits32, w0.logits16, (size_t)m_->cfg.vocab, s);
-  HELIOS_CUDA_CHECK(cudaMemcpyAsync(w0.host_logits, w0.logits16, (size_t)m_->cfg.vocab * 2,
-                                    cudaMemcpyDeviceToHost, s));
-  HELIOS_CUDA_CHECK(cudaStreamSynchronize(s));
-  int best = 0; float bv = -1e30f;
-  for (int i = 0; i < m_->cfg.vocab; i++) {
-    float v = __half2float(w0.host_logits[i]);
-    if (v > bv) { bv = v; best = i; }
-  }
-  return best;
-}
-
-// Verification needs the trunk's prediction at EVERY verified position, not just the last one.
-void Runner::final_head_multi(int n) {
-  Device& g0 = Engine::instance().gpu(0);
-  DevGuard guard(g0.phys_idx());
-  cudaStream_t s = s0_stream();
-  aux::rms_norm(c_->xh, aux::kHalf, m_->final_norm, aux::kHalf, w0.norm_out, aux::kHalf,
-                n, 4096, m_->cfg.rms_eps, 0.0f, 1.0f, false, 1, s);
-  exl3::GroupWords hw{(const uint16_t*)m_->lm_head.trellis, m_->lm_head.suh, m_->lm_head.svh,
-                      m_->lm_head.mul1};
-  exl3::gemm(logits32_multi_, w0.norm_out, hw, n, m_->cfg.vocab, 4096, m_->lm_head.K, true, s,
-             w0.a_had);
-  glue::cast_f32_f16(logits32_multi_, logits_multi_, (size_t)n * m_->cfg.vocab, s);
-  HELIOS_CUDA_CHECK(cudaMemcpyAsync(host_logits_multi_, logits_multi_,
-                                    (size_t)n * m_->cfg.vocab * 2, cudaMemcpyDeviceToHost, s));
-  HELIOS_CUDA_CHECK(cudaStreamSynchronize(s));
-}
-
 std::vector<int> Runner::generate(const std::vector<int>& prompt, const GenParams& p,
                                   const std::function<bool(int)>& on_token) {
-  // Drafting is exact only when the sampler is plain argmax: any penalty or min-p filtering would
-  // make the sampler disagree with the draft comparison.
-  if (mtp_ready_ && p.temperature <= 0.0f && p.rep_penalty == 1.0f && p.min_p <= 0.0f)
-    return generate_mtp(prompt, p, on_token);
   if (prompt.empty()) return {};
   const int start = prefix_begin(prompt);
   if (start < (int)prompt.size())

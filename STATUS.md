@@ -1366,15 +1366,13 @@ verified but opt-in for the reasons recorded above.
 4. **Layer-major prefill, multi-chunk inner loop** still trips an illegal access. It stays behind
    `HELIOS_LAYER_MAJOR=1`; single-chunk layer-major works and has no theoretical advantage over one
    large chunk, so this is low priority.
-5. **MTP speculative decoding is IMPLEMENTED AND VERIFIED** (`HELIOS_MTP=1`), contrary to the older
-   note further down: correctness confirmed token-identical to the non-drafting path via token-id
-   tracing, and it gives +5.8% decode on greedy requests. It remains **opt-in** because (a) the
-   accept rate is only ~15-22% for k=3, so the win is small, and (b) it only engages at
-   `temperature == 0` - a normally configured server (temperature 0.7) gets nothing from it.
-   If pursued further: implement the sampled-acceptance rule (accept with probability
-   `min(1, p_target/p_draft)`, resample the residual on rejection) so it works at temperature > 0;
-   and audit the draft's numerics against a torch oracle, since a draft-cache prefill experiment
-   (aimed at the low accept rate) showed no benefit and was reverted.
+5. **MTP speculative decoding: REMOVED** (see the Round 2 section at the top). It was verified
+   correct but measured 26-57% *slower* on wall clock, for two measured reasons: a verified row costs
+   ~1.7x a standalone decode row (each row activates a different expert set, so batching does not
+   amortise the MoE), and the draft head's top-1 rate is ~36%, which caps acceptance well below the
+   ~73% break-even. The earlier "+5.8%" was a metric artifact (`tm_.decode_tokens` counted verified
+   rows, not emitted tokens) and is retracted. The `Model::mtp` weights are still loaded from the
+   checkpoint (they are part of the arena layout), but nothing runs them.
 6. **The engine is not bit-reproducible run-to-run** (two identical baseline runs diverge around
    token 10), almost certainly fp non-associativity in the MoE's accumulation order. Any A/B
    comparison must use token-id tracing and allow for this, not assume two runs are comparable.

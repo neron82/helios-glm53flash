@@ -314,16 +314,6 @@ struct Loader : Model {
     load_group(p + ".mlp.shared_experts.down_proj", mtp.moe_w.shared[2], 0);
     mtp.moe_w.arena_layer = arena_slot_base[l];
     load_experts(l, arena_slot_base[l]);
-    if (!ram_only && (mtp_enabled() || getenv("HELIOS_MTP_EXPERTS"))) {
-      // Full preload of the MTP draft layer's experts to GPU1. Off by default: the draft layer is
-      // not wired into the decode loop, and this 1.74GB otherwise comes straight out of the expert
-      // slot pool (~288 more slots, ~10% more residency, and residency is what decode pays for).
-      size_t bytes = (size_t)cfg.n_expert * slay.stride;
-      mtp.experts_gpu1 = A(bytes, 1);
-      Job jb; jb.dst = mtp.experts_gpu1; jb.src_ram = slab(l, 0); jb.bytes = bytes;
-      jb.device = 1; jb.kind = Job::A2G; jb.name = "mtp_experts_preload";
-      jobs.push_back(jb);
-    }
     load_f16_from(p + ".input_layernorm.weight", mtp.input_ln, 0, true);
     load_f16_from(p + ".post_attention_layernorm.weight", mtp.post_ln, 0, true);
     load_group(p + ".eh_proj", mtp.eh_proj, 0);

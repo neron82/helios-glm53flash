@@ -11,13 +11,6 @@
 
 namespace helios {
 
-// Runtime switch for MTP speculative decoding. Opt-in: it costs ~512MB of GPU0 cache and ~1.74GB of
-// GPU1 (the draft layer's 288 experts), the latter taken from the expert slot pool.
-inline bool mtp_enabled() {
-  static const bool on = [] { const char* e = getenv("HELIOS_MTP"); return e && *e && *e != '0'; }();
-  return on;
-}
-
 enum AttnKind : uint8_t { KDA = 0, MLA = 1 };
 
 struct Config {

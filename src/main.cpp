@@ -36,7 +36,7 @@ int main(int argc, char** argv) {
     if (!m.load(dir, false, false)) return 3;
     Cache cache;
     int cap = 4096;
-    if (!cache.init(m, cap, max_m, mtp_enabled())) return 5;
+    if (!cache.init(m, cap, max_m)) return 5;
     SlotMgr slots;
     Runner runner;
     if (!runner.init(m, cache, slots, nullptr, max_m)) return 7;
@@ -62,7 +62,7 @@ int main(int argc, char** argv) {
     Tokenizer tk;
     tk.load(dir);
     Cache cache;
-    if (!cache.init(m, cap, 512, mtp_enabled())) return 5;
+    if (!cache.init(m, cap, 512)) return 5;
     SlotMgr slots;
     std::string census = dir + "/.helios.census";
     if (m.slot_pool && m.n_slots > 0) { if (!slots.init_from_pool(m, m.slot_pool, m.n_slots, census.c_str())) return 6; }
@@ -139,7 +139,7 @@ int main(int argc, char** argv) {
     Tokenizer tk;
     if (!tk.load(dir)) { fprintf(stderr, "tokenizer load failed\n"); return 4; }
     Cache cache;
-    if (!cache.init(m, cap, max_chunk, mtp_enabled())) return 5;
+    if (!cache.init(m, cap, max_chunk)) return 5;
     SlotMgr slots;
     std::string census = dir + "/.helios.census";
     if (m.slot_pool && m.n_slots > 0) { if (!slots.init_from_pool(m, m.slot_pool, m.n_slots, census.c_str())) return 6; }

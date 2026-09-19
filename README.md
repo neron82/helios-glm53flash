@@ -96,8 +96,10 @@ per chunk against a 120-token decode's ~41k. Switching to the census took reside
 
 ## Features
 
-- **262k context** on 2× 24 GB, via absorbed MLA latents (a 512-wide fp16 latent instead of the
-  unabsorbed per-head K+V, ~72× smaller) plus fixed-size KDA recurrent state.
+- **540k context** on 2× 24 GB, via absorbed MLA latents (a 512-wide fp16 latent instead of the
+  unabsorbed per-head K+V, ~72× smaller) plus fixed-size KDA recurrent state. The cap is set by GPU0
+  VRAM, and reclaiming three over-sized indexer buffers moved it from 262k to 540k with no change in
+  throughput (a 97k-token prompt still prefills at 349.9 tok/s) — see "KV, context and VRAM" below.
 - **Cross-request prefix caching**: a request that continues or re-sends a conversation reuses the
   resident KV instead of prefilling from token 0 (measured 9–34× faster on 15–21k-token prompts).
 - **Tiered expert streaming** from a 73 GB pinned RAM arena into an 18 GB VRAM slot pool, with
@@ -187,9 +189,6 @@ reaping and a wait for the previous instance's VRAM to be released:
 | variable | default | meaning |
 |---|---|---|
 | `HELIOS_SLOTS` | auto | expert pool size in slots; auto is `(free VRAM − 4 GiB) / slab size` |
-| `HELIOS_MTP` | off | enable MTP speculative decoding (greedy requests only) |
-| `HELIOS_MTP_K` | 3 | drafts per round; `0` runs the loop without drafting |
-| `HELIOS_MTP_EXPERTS` | off | preload the MTP layer's 288 experts to GPU1 (costs ~288 pool slots) |
 | `HELIOS_GPU_ORDER` | auto | `trunk,slots` physical GPU indices, overriding the PCIe-bandwidth ranking |
 | `HELIOS_NO_PIN` | off | do not pin the RAM arena (for low-RAM hosts; costs streaming bandwidth) |
 | `HELIOS_MAX_TOKENS` | 32768 | same as `--max-tokens` |
@@ -197,6 +196,8 @@ reaping and a wait for the previous instance's VRAM to be released:
 | `HELIOS_PREFIX_SNAP_MB` | 4096 | same as `--prefix-snap-mb` |
 | `HELIOS_PREFIX_INTERVAL` | 8192 | same as `--prefix-interval` |
 | `HELIOS_PREFIX_DEBUG` | off | log the reuse decision (common prefix, mode, resume position) per request |
+| `HELIOS_PREFIX_SNAP_MB` / `HELIOS_PREFIX_INTERVAL` | 4096 / 8192 | snapshot budget (pinned host) and the token interval between snapshots |
+| `HELIOS_DUMP_CKV` | off | write MLA layer 0's latent cache after a prefill (prefix path), e.g. for precision studies |
 | `HELIOS_PROF` | off | per-stage timing accumulators, printed at exit |
 | `HELIOS_LAYER_MAJOR` | off | alternative layer-major prefill (see Limitations) |
 
@@ -304,17 +305,50 @@ Two of those are worth calling out because they framed the whole optimisation ef
 | change | effect |
 |---|---|
 | Cross-request prefix caching | re-sent prompt **33.6×** faster, next chat turn **9.2×**, cold prefill unchanged |
+| Reclaiming over-sized indexer buffers | KV 4.44 → 3.10 GB, context cap 262k → **540k**, no compute cost |
 | Persistent census for expert residency | decode **+41%**, expert PCIe traffic −32% |
 | Tensor-core indexer for pooled selection | 10.5× at long context |
 | Tiled fp16 GEMMs for the absorbed projections | removed ~650 ms per 8192-token chunk |
 | half2-FMA accumulation in the sparse MLA dot | −7.6% on that kernel (2.80e-04 vs 2.72e-04 error) |
-| MTP speculative decoding | +5.8% on greedy decode, verified token-identical |
-| Draft-cache prefill (to raise MTP acceptance) | **no gain, reverted** — the draft's empty cache was not the limiting factor |
+| Draft-cache prefill (to raise MTP acceptance) | improves the draft's rank quality, **does not raise acceptance** — see below |
+| MTP speculative decoding | **negative: 26–57% slower on wall clock** (the earlier "+5.8%" counted verified rows, not emitted tokens) |
+| KV-cache compression to q8_0 | **not implemented**: it buys context the engine already has for free, cannot speed up an issue-bound kernel, and cannot help expert residency across two cards |
 | Layer-major prefill | **abandoned** — trips an illegal access in a multi-chunk inner loop, and has no theoretical advantage over one large chunk |
 
 Two measurement traps are documented in `src/` comments because they cost real time: a "2.79 GB/s
 copy ceiling" that was actually the wrong card being measured, and a stage-timing artefact that
 looked like a 50% host-side stall but was a units error between chunks of different sizes.
+
+## KV, context and VRAM
+
+The context cap is limited by GPU0's VRAM, and most of what GPU0 held at cap 262144 was not the KV
+cache. Three buffers were sized for a job they did not do, and reclaiming them is free — no kernel
+change, no precision loss:
+
+| buffer | was | now | saved |
+|---|---|---|---|
+| indexer raw `k‖gate` rows | one row per token of context (11 layers × 512 B/token) | a ring of `max_chunk + 4` rows, indexed by position modulo that size | 1.43 GB |
+| indexer score matrix | `max_chunk × npools` | the 1024 rows actually in flight | 0.94 GB |
+| transposed pool plane | `[c][p]` mirror for a scalar fallback the engine never takes | — (the tensor-core path is the only one used) | 0.18 GB |
+
+Measured: `kv 4.44 → 3.10 GB`, GPU0 free `1.60 → 3.97 GB`, and the cap that fits went from 262144 to
+over 600000; 540000 leaves 0.74 GB of headroom. Throughput is unchanged (a 97,039-token prompt:
+349.9 tok/s, against 346–357 tok/s at the old cap).
+
+Compressing the KV to q8_0 was evaluated and **not implemented**, for three measured reasons:
+
+- **It cannot make the engine faster.** The sparse MLA decode is bound by instruction issue, not by
+  bytes: a bit-exact variant that cut its pool-plane traffic 8× measured neutral. Halving the cache
+  size therefore buys capacity only, while adding a dequantisation step per element.
+- **It cannot help expert residency**, which is the other thing VRAM could buy. The KV lives on GPU0
+  and the expert pool on GPU1, and GPU0's link measures 2.85 GB/s against 25 GB/s from the RAM arena:
+  an expert tier there would stream ~9× slower than the tier below it. (For the record, the freed
+  1.4–3 GB would be worth roughly +7.5–16% residency, about +4–9% decode, *if* it were fungible.)
+- **Its quality cost is real but small** — and that is the only favourable part. On 1939 real `ckv`
+  rows dumped from the engine, block-wise int8 gives a relative attention-output error of 1.96e-04,
+  against the engine's own fp16 kernel deviations of 1.7–2.8e-04; fp8 is 10× worse and 4-bit 60×
+  worse. So 8 bits would be the only defensible choice — if it were needed, which after the
+  reclamation above it is not.
 
 ## Limitations and known characteristics
 
@@ -337,8 +371,13 @@ looked like a 50% host-side stall but was a units error between chunks of differ
   comparison must compare token IDs and allow for this rather than assume two runs are comparable.
 - **Reasoning defaults to `high` rather than the model's `max`** (see above); an unrecognised
   `reasoning_effort` in a request falls back to the server default rather than being coerced to `max`.
-- **MTP is off by default** and only engages for `temperature == 0` with no repetition penalty or
-  min-p filtering, since those would make the sampler disagree with the greedy acceptance test.
+- **MTP speculative decoding is a net loss and is retained only as an opt-in experiment.** Measured
+  on wall clock for identical output (120 tokens, greedy): 16.8 s with MTP off, 20.6 s at k=1, 29.2 s
+  at k=3 — 26% and 57% slower. Two measured reasons: the draft head's top-1 rate is ~36% (so the
+  acceptance ceiling is the model's head, and filling the draft's KV cache — which was never written,
+  and now is — improves its rank quality without moving that number), and a verified row costs ~1.7×
+  a standalone decode row because each row activates a different expert set (a 4-row verify spends
+  11.5 ms of MoE per layer against 1.7 ms for one decode step).
 - **A prompt that leaves no room truncates the prompt, not the output.** The KV capacity (`--cap`)
   is a hard ceiling: generation stops when it is reached and reports `finish_reason: "length"`, and a
   prompt longer than the remaining capacity is truncated (with a log line) so that generation has

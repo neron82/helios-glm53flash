@@ -16,11 +16,9 @@ class Cache {
 public:
   // Computes layout and allocates from gpu0's bump pool. Layers index by their ordinal
   // among MLA / KDA layers (Model::cfg.attn order).
-  CachePlan plan(const Config& cfg, int cap, bool mtp_draft = false, int max_chunk = 512);
+  CachePlan plan(const Config& cfg, int cap, int max_chunk = 512);
   static int raw_ring_rows(int cap, int max_chunk);
-  // mtp_draft: also allocate one extra MLA cache slot for the MTP draft layer (its K/V come from
-  // its own projections, so it cannot share the trunk's cache rows).
-  bool init(const Model& m, int cap, int max_chunk = 512, bool mtp_draft = false);
+  bool init(const Model& m, int cap, int max_chunk = 512);
 
   // ---- MLA ----
   half* ckv(int mla_ord) const { return ckv_ + (size_t)mla_ord * cap_ * 512; }
@@ -42,7 +40,6 @@ public:
 
   int cap() const { return cap_; }
   int n_mla() const { return n_mla_; }
-  int mtp_ord() const { return mtp_ord_; }        // MLA ordinal of the draft layer, -1 if absent
   int n_kda() const { return n_kda_; }
   int len() const { return len_; }
   void set_len(int n) { len_ = n; }
@@ -68,7 +65,7 @@ public:
 private:
   size_t cap_ = 0;
   int len_ = 0;
-  int n_mla_ = 0, n_kda_ = 0, mtp_ord_ = -1;
+  int n_mla_ = 0, n_kda_ = 0;
   half *ckv_ = nullptr, *idx_ring_ = nullptr, *pool_k_nt_ = nullptr;
   int raw_rows_ = 0;
   char* kda_conv_ = nullptr;   // bf16 conv ring, [kda][24576][4]
