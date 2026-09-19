@@ -113,17 +113,17 @@ int main(int argc, char** argv) {
     std::vector<float> ik(np * POOL * 128), ig(np * POOL * 128), ape(4 * 128);
     for (auto& x : ik) x = fr(); for (auto& x : ig) x = fr() * 3; for (auto& x : ape) x = fr() * 2;
     auto ikh = toh(ik), igh = toh(ig);
-    half *dik, *dig, *draw, *dpk; float* dape;
+    half *dik, *dig, *draw, *dpk, *dpk_nt; float* dape;
+    const int draw_rows = tmax;   // ring sized to cover the fixture (a small ring is tested below)
     CK(cudaMalloc(&dik, ikh.size() * 2)); CK(cudaMalloc(&dig, igh.size() * 2));
-    CK(cudaMalloc(&draw, tmax * 256 * 2)); CK(cudaMalloc(&dpk, np * 128 * 2)); CK(cudaMalloc(&dape, ape.size() * 4));
+    CK(cudaMalloc(&draw, tmax * 256 * 2)); CK(cudaMalloc(&dpk, np * 128 * 2));
+    CK(cudaMalloc(&dpk_nt, np * 128 * 2)); CK(cudaMalloc(&dape, ape.size() * 4));
     CK(cudaMemcpy(dik, ikh.data(), ikh.size() * 2, cudaMemcpyHostToDevice));
     CK(cudaMemcpy(dig, igh.data(), igh.size() * 2, cudaMemcpyHostToDevice));
     CK(cudaMemcpy(dape, ape.data(), ape.size() * 4, cudaMemcpyHostToDevice));
-    kpool_write(dik, dig, draw, dpk, dape, 0, np * POOL, np, 0); CK(cudaDeviceSynchronize());
-    // CPU pool keys: the device plane is transposed [c][pool], so gather it back to pool-major
-    std::vector<half> pk_t(np * 128); CK(cudaMemcpy(pk_t.data(), dpk, pk_t.size() * 2, cudaMemcpyDeviceToHost));
-    std::vector<half> pk(np * 128);
-    for (int p = 0; p < np; p++) for (int c = 0; c < 128; c++) pk[p * 128 + c] = pk_t[c * np + p];
+    kpool_write(dik, dig, draw, draw_rows, dpk_nt, dape, 0, np * POOL, 0); CK(cudaDeviceSynchronize());
+    std::vector<half> pk(np * 128);   // pool-major on the device now
+    CK(cudaMemcpy(pk.data(), dpk_nt, pk.size() * 2, cudaMemcpyDeviceToHost));
     std::vector<float> ref(np * 128);
     for (int p = 0; p < np; p++) for (int c = 0; c < 128; c++) {
       float g[4], mx = -1e30f;
@@ -144,24 +144,24 @@ int main(int argc, char** argv) {
     {
       const int n_tok = 16, npool_used = n_tok / POOL;
       std::vector<half> base(np * 128), by4(np * 128), by1(np * 128);
-      CK(cudaMemset(draw, 0, tmax * 256 * 2)); CK(cudaMemset(dpk, 0, np * 128 * 2));
-      kpool_write(dik, dig, draw, dpk, dape, 0, n_tok, np, 0); CK(cudaDeviceSynchronize());
-      CK(cudaMemcpy(base.data(), dpk, base.size() * 2, cudaMemcpyDeviceToHost));
-      CK(cudaMemset(draw, 0, tmax * 256 * 2)); CK(cudaMemset(dpk, 0, np * 128 * 2));
+      CK(cudaMemset(draw, 0, tmax * 256 * 2)); CK(cudaMemset(dpk_nt, 0, np * 128 * 2));
+      kpool_write(dik, dig, draw, draw_rows, dpk_nt, dape, 0, n_tok, 0); CK(cudaDeviceSynchronize());
+      CK(cudaMemcpy(base.data(), dpk_nt, base.size() * 2, cudaMemcpyDeviceToHost));
+      CK(cudaMemset(draw, 0, tmax * 256 * 2)); CK(cudaMemset(dpk_nt, 0, np * 128 * 2));
       for (int i = 0; i < n_tok; i += POOL)
-        kpool_write(dik + (size_t)i * 128, dig + (size_t)i * 128, draw, dpk, dape, i, POOL, np, 0);
+        kpool_write(dik + (size_t)i * 128, dig + (size_t)i * 128, draw, draw_rows, dpk_nt, dape, i, POOL, 0);
       CK(cudaDeviceSynchronize());
-      CK(cudaMemcpy(by4.data(), dpk, by4.size() * 2, cudaMemcpyDeviceToHost));
-      CK(cudaMemset(draw, 0, tmax * 256 * 2)); CK(cudaMemset(dpk, 0, np * 128 * 2));
+      CK(cudaMemcpy(by4.data(), dpk_nt, by4.size() * 2, cudaMemcpyDeviceToHost));
+      CK(cudaMemset(draw, 0, tmax * 256 * 2)); CK(cudaMemset(dpk_nt, 0, np * 128 * 2));
       for (int i = 0; i < n_tok; i++)
-        kpool_write(dik + (size_t)i * 128, dig + (size_t)i * 128, draw, dpk, dape, i, 1, np, 0);
+        kpool_write(dik + (size_t)i * 128, dig + (size_t)i * 128, draw, draw_rows, dpk_nt, dape, i, 1, 0);
       CK(cudaDeviceSynchronize());
-      CK(cudaMemcpy(by1.data(), dpk, by1.size() * 2, cudaMemcpyDeviceToHost));
+      CK(cudaMemcpy(by1.data(), dpk_nt, by1.size() * 2, cudaMemcpyDeviceToHost));
       int d4 = 0, d1 = 0, unwritten = 0;
       for (int p = 0; p < npool_used; p++) for (int c = 0; c < 128; c++) {
-        half a = base[(size_t)c * np + p];
-        if (a != by4[(size_t)c * np + p]) d4++;
-        if (a != by1[(size_t)c * np + p]) d1++;
+        half a = base[(size_t)p * 128 + c];
+        if (a != by4[(size_t)p * 128 + c]) d4++;
+        if (a != by1[(size_t)p * 128 + c]) d1++;
         if (a == __float2half(0.0f)) unwritten++;
       }
       const int total = npool_used * 128;
@@ -170,8 +170,40 @@ int main(int argc, char** argv) {
              (d4 == 0 && d1 == 0 && unwritten == 0) ? "PASS" : "FAIL");
       fails += !(d4 == 0 && d1 == 0 && unwritten == 0);
       // Rebuild the whole plane: the indexer_score case below reads all np pools of this fixture.
-      CK(cudaMemset(draw, 0, tmax * 256 * 2)); CK(cudaMemset(dpk, 0, np * 128 * 2));
-      kpool_write(dik, dig, draw, dpk, dape, 0, np * POOL, np, 0); CK(cudaDeviceSynchronize());
+      CK(cudaMemset(draw, 0, tmax * 256 * 2)); CK(cudaMemset(dpk_nt, 0, np * 128 * 2));
+      kpool_write(dik, dig, draw, draw_rows, dpk_nt, dape, 0, np * POOL, 0); CK(cudaDeviceSynchronize());
+    }
+
+    // The raw rows are a ring, so the same tokens must give the same pool keys from a small ring as
+    // from a full plane. Positions 12..27 through a 20-row ring wrap it, which is the case a
+    // chunk-sized ring hits in a long prefill.
+    {
+      const int n_ring = 20, pos0 = 12, n_tok = 16;
+      std::vector<half> plane(np * 128), ring(np * 128);
+      CK(cudaMemset(draw, 0, tmax * 256 * 2)); CK(cudaMemset(dpk_nt, 0, np * 128 * 2));
+      kpool_write(dik, dig, draw, tmax, dpk_nt, dape, pos0, n_tok, 0); CK(cudaDeviceSynchronize());
+      CK(cudaMemcpy(plane.data(), dpk_nt, plane.size() * 2, cudaMemcpyDeviceToHost));
+      CK(cudaMemset(draw, 0, tmax * 256 * 2)); CK(cudaMemset(dpk_nt, 0, np * 128 * 2));
+      kpool_write(dik, dig, draw, n_ring, dpk_nt, dape, pos0, n_tok, 0); CK(cudaDeviceSynchronize());
+      CK(cudaMemcpy(ring.data(), dpk_nt, ring.size() * 2, cudaMemcpyDeviceToHost));
+      int diff = 0, written = 0, clobbered = 0;
+      for (int p = pos0 / POOL; p <= (pos0 + n_tok - 1) / POOL; p++)
+        for (int c = 0; c < 128; c++) {
+          if (plane[(size_t)p * 128 + c] != ring[(size_t)p * 128 + c]) diff++;
+          if (plane[(size_t)p * 128 + c] != __float2half(0.0f)) written++;
+        }
+      // Pools whose groups were complete before this call must be left alone. A launch's grid starts
+      // at block 0, so those blocks run and must bail out; if they instead recompute from recycled
+      // ring slots they overwrite the earlier chunks' keys with garbage.
+      for (int p = 0; p < pos0 / POOL; p++)
+        for (int c = 0; c < 128; c++)
+          if (ring[(size_t)p * 128 + c] != __float2half(0.0f)) clobbered++;
+      printf("kpool_write ring (20 rows, positions %d..%d): %d differ, %d written, %d earlier "
+             "entries clobbered %s\n", pos0, pos0 + n_tok - 1, diff, written, clobbered,
+             (diff == 0 && written > 0 && clobbered == 0) ? "PASS" : "FAIL");
+      fails += !(diff == 0 && written > 0 && clobbered == 0);
+      CK(cudaMemset(draw, 0, tmax * 256 * 2)); CK(cudaMemset(dpk_nt, 0, np * 128 * 2));
+      kpool_write(dik, dig, draw, draw_rows, dpk_nt, dape, 0, np * POOL, 0); CK(cudaDeviceSynchronize());
     }
 
     // indexer_score: m=2, positions 255 and 100
@@ -186,7 +218,7 @@ int main(int argc, char** argv) {
     CK(cudaMemcpy(dw, wh.data(), wh.size() * 2, cudaMemcpyHostToDevice));
     int pos[2] = {255, 100};
     CK(cudaMemcpy(dpos, pos, 8, cudaMemcpyHostToDevice));
-    indexer_score(dqi, dpk, dw, dpos, dsc, m, np, np, 0); CK(cudaDeviceSynchronize());
+    indexer_score(dqi, dpk_nt, dw, dpos, dsc, m, np, 0); CK(cudaDeviceSynchronize());
     std::vector<half> sc(m * np); CK(cudaMemcpy(sc.data(), dsc, sc.size() * 2, cudaMemcpyDeviceToHost));
     ref.assign(m * np, 0);
     for (int r = 0; r < m; r++) for (int p = 0; p < np; p++) {
@@ -210,7 +242,7 @@ int main(int argc, char** argv) {
     }
     e = num / den;
     printf("indexer_score relerr %.2e %s\n", e, e < 3e-3 ? "PASS" : "FAIL"); fails += e >= 3e-3;
-    cudaFree(dqi); cudaFree(dw); cudaFree(dsc); cudaFree(dpos); cudaFree(dik); cudaFree(dig); cudaFree(draw); cudaFree(dpk); cudaFree(dape);
+    cudaFree(dqi); cudaFree(dw); cudaFree(dsc); cudaFree(dpos); cudaFree(dik); cudaFree(dig); cudaFree(draw); cudaFree(dpk_nt); cudaFree(dape);
   }
 
   // ---- pool_expand ----

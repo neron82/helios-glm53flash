@@ -264,19 +264,12 @@ void indexer_score_mma(const half* q_idx, const half* pool_k_nt, const half* w, 
   cuda_check(cudaPeekAtLastError());
 }
 
-void indexer_score(const half* q_idx, const half* pool_k, const half* w, const int* q_pos,
-                   half* scores, int m, int npools, int pk_stride, Stream s,
-                   const half* pool_k_nt) {
-  // A row-blocked scalar variant was written, verified bit-exact, and measured neutral (259.8 vs
-  // 264.4ms at pos 0, 1863 vs 1873ms at pos 24k): the scalar kernel is bound by its own smem+FMA
-  // work, not by pool-plane traffic (see STATUS.md). The tensor-core path below is the fix; it needs
-  // the pool-major mirror plane, so it falls back to the scalar kernel when that is unavailable.
-  static const bool mma = getenv("HELIOS_IDX_MMA") == nullptr || atoi(getenv("HELIOS_IDX_MMA")) != 0;
-  if (mma && pool_k_nt) {
-    indexer_score_mma(q_idx, pool_k_nt, w, q_pos, scores, m, npools, s);
-    return;
-  }
-  indexer_score_legacy(q_idx, pool_k, w, q_pos, scores, m, npools, pk_stride, s);
+void indexer_score(const half* q_idx, const half* pool_k_nt, const half* w, const int* q_pos,
+                   half* scores, int m, int npools, Stream s) {
+  // The tensor-core path is the only one the engine uses. The scalar kernel remains exported as the
+  // parity test's reference (and a bit-exact row-blocked variant was measured neutral before it, so
+  // there is nothing to gain by keeping a scalar fallback on the runtime path).
+  indexer_score_mma(q_idx, pool_k_nt, w, q_pos, scores, m, npools, s);
 }
 
 void indexer_score_legacy(const half* q_idx, const half* pool_k, const half* w, const int* q_pos,
@@ -337,33 +330,42 @@ void pool_expand_row(const int* pool_idx, const int* q_pos, int* raw_idx, int m,
 // kpool_write: raw plane rows for all new tokens; pool keys for pools completed this call.
 // grid.x = ceil((pos_start+n_new)/4); block 128 threads (one per channel).
 __global__ void kpool_write_k(const half* __restrict__ ik, const half* __restrict__ ig,
-                              half* __restrict__ raw, half* __restrict__ pk, half* __restrict__ pk_nt,
+                              half* __restrict__ raw, int raw_rows, half* __restrict__ pk_nt,
                               const float* __restrict__ ape,
-                              int pos_start, int n_new, int pk_stride) {
+                              int pos_start, int n_new) {
   int p = blockIdx.x;
   int c = threadIdx.x;                            // 128 channels
   int t0 = p * POOL;
+  // The raw rows exist only so a pool can be completed from them, and only the current chunk's rows
+  // (plus, during decode, the three before it) are ever read back, so they live in a ring instead of
+  // one row per token of context - 1.4 GB at cap 262144 that the KV cache can have instead.
   for (int j = 0; j < POOL; j++) {
     int pos = t0 + j;
     int src = pos - pos_start;
     if (src >= 0 && src < n_new) {
-      raw[(size_t)pos * 256 + c] = ik[src * 128 + c];
-      raw[(size_t)pos * 256 + 128 + c] = ig[src * 128 + c];
+      half* r = raw + (size_t)(pos % raw_rows) * 256;
+      r[c] = ik[src * 128 + c];
+      r[128 + c] = ig[src * 128 + c];
     }
   }
-  // The group is computable as soon as its LAST token has been written, even if its first tokens came
-  // from an earlier call: the raw rows above are position-addressed and still hold them (they are the
-  // same sequence - a chunk boundary or a prefix-cache resume). Requiring the whole group to be inside
-  // this call meant that every pool completed during decode (one token per call) was never written at
-  // all, while the indexer's visibility rule (`p*POOL + POOL - 1 <= q_pos`) still exposed it - so a
-  // query read an unwritten pool row for every 4 generated tokens.
-  if (t0 + POOL - 1 >= pos_start + n_new) return;   // group not completed yet
+  // A group is computable exactly when its LAST member is written by this call, whenever its earlier
+  // members were written. Two things depend on that being the condition:
+  //   * decode writes one token per call, so requiring all four members in one call meant no pool
+  //     completed during decode was ever written, while the indexer's visibility rule
+  //     (`p*POOL + POOL - 1 <= q_pos`) still exposed it;
+  //   * groups *below* pos_start must be skipped, because the raw rows are a ring and those slots may
+  //     already have been recycled by this very launch - the full-plane version could re-derive such a
+  //     pool from its own rows idempotently, but a ring cannot, and doing so clobbers pools the
+  //     earlier chunks already computed.
+  const int last_in_group = t0 + POOL - 1;
+  if (last_in_group < pos_start || last_in_group >= pos_start + n_new) return;
   float g[POOL], k[POOL];
   float mx = -1e30f;
   #pragma unroll
   for (int i = 0; i < POOL; i++) {
-    k[i] = __half2float(raw[(size_t)(t0 + i) * 256 + c]);
-    g[i] = __half2float(raw[(size_t)(t0 + i) * 256 + 128 + c]) + ape[i * 128 + c];
+    const half* r = raw + (size_t)((t0 + i) % raw_rows) * 256;
+    k[i] = __half2float(r[c]);
+    g[i] = __half2float(r[128 + c]) + ape[i * 128 + c];
     mx = fmaxf(mx, g[i]);
   }
   float sum = 0.f;
@@ -373,18 +375,17 @@ __global__ void kpool_write_k(const half* __restrict__ ik, const half* __restric
   #pragma unroll
   for (int i = 0; i < POOL; i++) out += (g[i] / sum) * k[i];
   out *= 0.25f;                                   // mean of softmax-weighted keys
-  // Transposed layout [c][pool]: indexer_score reads one d per lane across 32 lanes, so a
-  // pool-major layout made every load a 32B transaction for 2B of data.
-  pk[(size_t)c * pk_stride + p] = __float2half_rn(out);
-  if (pk_nt) pk_nt[(size_t)p * 128 + c] = __float2half_rn(out);   // pool-major mirror for the mma path
+  // Pool-major [p][128]: indexer_score_mma wants the pool keys as the column-major B operand, and
+  // storing them this way at write time avoids a transposing, cache-line-thrashing load in every one
+  // of the ~500k indexer blocks per layer. (The scalar kernel's [c][p] mirror this replaced is gone.)
+  pk_nt[(size_t)p * 128 + c] = __float2half_rn(out);
 }
 
-void kpool_write(const half* idx_k, const half* idx_g, half* raw_plane, half* pool_k,
-                 const float* ape, int pos_start, int n_new, int pk_stride, Stream s,
-                 half* pool_k_nt) {
+void kpool_write(const half* idx_k, const half* idx_g, half* raw_ring, int raw_rows,
+                 half* pool_k_nt, const float* ape, int pos_start, int n_new, Stream s) {
   int blocks = (pos_start + n_new + POOL - 1) / POOL;
-  kpool_write_k<<<blocks, 128, 0, s>>>(idx_k, idx_g, raw_plane, pool_k, pool_k_nt, ape, pos_start,
-                                       n_new, pk_stride);
+  kpool_write_k<<<blocks, 128, 0, s>>>(idx_k, idx_g, raw_ring, raw_rows, pool_k_nt, ape, pos_start,
+                                       n_new);
   cuda_check(cudaPeekAtLastError());
 }
 

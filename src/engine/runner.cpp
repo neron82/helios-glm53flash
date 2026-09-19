@@ -1,4 +1,5 @@
 #include "engine/runner.hpp"
+#include <array>
 #include "engine/glue.cuh"
 #include "engine/glue2.cuh"
 #include "cuda/attn/attn.cuh"
@@ -94,8 +95,14 @@ bool Runner::init(Model& m, Cache& c, SlotMgr& sm, Tokenizer* tk, int max_chunk)
   w0.idx_k = (half*)A0((size_t)M * 128 * 2);
   w0.idx_gate = (half*)A0((size_t)M * 128 * 2);
   w0.idx_w = (half*)A0((size_t)M * 32 * 2);
+  // The indexer materialises an [rows, npools] score matrix, but it processes rows in blocks of
+  // `idx_block_` and reuses the buffer, so sizing it by max_chunk would waste (max_chunk/idx_block)
+  // times the memory - 940 MB at cap 262144, which is context the cache cannot otherwise have.
   int maxpools = (c_->cap() / 4) + 2;
-  w0.scores = (half*)A0((size_t)M * maxpools * 2);
+  idx_block_ = getenv("HELIOS_IDX_BLOCK") ? atoi(getenv("HELIOS_IDX_BLOCK")) : 1024;
+  if (idx_block_ < 16) idx_block_ = 16;
+  if (idx_block_ > M) idx_block_ = M;
+  w0.scores = (half*)A0((size_t)idx_block_ * maxpools * 2);
   w0.topk_idx = (int*)A0((size_t)M * 512 * 4);
   w0.raw_idx = (int*)A0((size_t)M * (512 * 4 + 4) * 4);
   w0.qpos = (int*)A0((size_t)M * 4);
@@ -577,9 +584,8 @@ void Runner::mla_layer(Layer& L, int n, int pos) {
   glue::gemm_nt_f16(w0.idx_w, c_->xa, L.idx.wproj, n, 32, 4096, false, false, s);
   DBGSYNC(s, "mla idx proj");
   mark(3);
-  attn::kpool_write(w0.idx_k, w0.idx_gate, c_->idx_plane(ord), c_->pool_k(ord), L.idx.kpool_ape, pos, n,
-                    c_->cap() / 4, s,
-                    c_->pool_k_nt(ord));
+  attn::kpool_write(w0.idx_k, w0.idx_gate, c_->idx_ring(ord), c_->raw_rows(), c_->pool_k_nt(ord),
+                    L.idx.kpool_ape, pos, n, s);
   DBGSYNC(s, "mla kpool");
   mark(8);            // separates kpool_write from the qpos copy + q_latent that shared this segment
   // per-row positions
@@ -611,13 +617,11 @@ void Runner::mla_layer(Layer& L, int n, int pos) {
   // ordered top-k). This is the pattern that removed 256-launch overhead from q_latent/o_absorb.
   {
     const int ktop = std::min(512, npools);
-    const int rb = std::min(n, getenv("HELIOS_IDX_BLOCK") ? atoi(getenv("HELIOS_IDX_BLOCK")) : 1024);
+    const int rb = std::min(n, idx_block_);
     for (int off = 0; off < n; off += rb) {
       const int rows = std::min(rb, n - off);
-      attn::indexer_score(w0.idx_q + (size_t)off * 32 * 128, c_->pool_k(ord),
-                          w0.idx_w + (size_t)off * 32, w0.qpos + off, w0.scores, rows, npools,
-                          c_->cap() / 4, s,
-                          c_->pool_k_nt(ord));
+      attn::indexer_score(w0.idx_q + (size_t)off * 32 * 128, c_->pool_k_nt(ord),
+                          w0.idx_w + (size_t)off * 32, w0.qpos + off, w0.scores, rows, npools, s);
       aux::dsa_topk(w0.scores, npools, w0.topk_idx + (size_t)off * 512, rows, npools, ktop, 512,
                     nullptr, npools, s);
       attn::pool_expand_row(w0.topk_idx + (size_t)off * 512, w0.qpos + off,
@@ -1438,6 +1442,15 @@ void Runner::prefill(const std::vector<int>& ids) {
         snap_capture(pos_);
     }
     final_head(last0);
+    // Diagnostic: dump the MLA latent cache so an offline study can measure what a lower-precision
+    // KV format would cost this model's attention (HELIOS_DUMP_CKV=/tmp/prefix).
+    if (const char* d = getenv("HELIOS_DUMP_CKV")) {
+      std::vector<half> buf((size_t)pos_ * 512);
+      HELIOS_CUDA_CHECK(cudaMemcpy(buf.data(), c_->ckv(0), buf.size() * 2, cudaMemcpyDeviceToHost));
+      FILE* f = fopen((std::string(d) + ".ckv").c_str(), "wb");
+      if (f) { fwrite(buf.data(), 2, buf.size(), f); fclose(f);
+               fprintf(stderr, "[dump] ckv L0 %d rows -> %s.ckv\n", pos_, d); }
+    }
     tm_.prefill_ms += now_ms() - t0;
     tm_.prefill_tokens += n;
     return;
@@ -1563,6 +1576,29 @@ std::vector<int> Runner::generate_mtp(const std::vector<int>& prompt, const GenP
   int t0 = argmax_of(w0.host_logits);
   int seed_row = last_rows_ - 1;
   long long drafted = 0, accepted_total = 0, rounds = 0;
+  // ---- diagnostics for the accept-rate question (HELIOS_MTP_STATS) -------------------------------
+  // The draft layer keeps its own KV cache and nothing fills it over the prompt, so its attention may
+  // be running over rows that were never written. Dump a few rows of the draft cache next to the
+  // trunk's (control) so that is a measurement rather than a guess.
+  const bool stats = getenv("HELIOS_MTP_STATS") != nullptr;
+  if (stats) {
+    auto peek = [&](const char* what, const half* base, int rows) {
+      std::vector<half> h((size_t)rows * 512);
+      HELIOS_CUDA_CHECK(cudaMemcpy(h.data(), base, h.size() * 2, cudaMemcpyDeviceToHost));
+      double sum = 0; int nz = 0;
+      for (half v : h) { float f = __half2float(v); sum += f * f; if (f != 0.f) nz++; }
+      fprintf(stderr, "[mtpstats] %s: %zu values, rms=%.5f, nonzero=%d/%zu\n", what, h.size(),
+              sqrt(sum / (double)h.size()), nz, h.size());
+    };
+    peek("trunk ckv rows 0..15 (control)", c_->ckv(0), 16);
+    if (c_->mtp_ord() >= 0) peek("draft ckv rows 0..15", c_->ckv(c_->mtp_ord()), 16);
+    if (c_->mtp_ord() >= 0 && pos_ > 32)
+      peek("draft ckv rows at last_pos-16..", c_->ckv(c_->mtp_ord()) + (size_t)(pos_ - 16) * 512, 16);
+  }
+  // Rank of the trunk's token within the draft's own top-N: if the head is merely weak it still ranks
+  // the right token highly, whereas broken inputs make it rank it like chance (1 in 154880).
+  std::vector<std::array<int, 8>> draft_top8;
+  long long rank_hist[9] = {};
   // `t0` is the pending token: produced by the trunk (from the prefill, then from each round's own
   // bonus) and emitted HERE, exactly once. The round below emits only the accepted drafts plus the
   // new bonus, so every round consumes `a+1` verified positions and emits `a+1` new tokens.
@@ -1578,9 +1614,24 @@ std::vector<int> Runner::generate_mtp(const std::vector<int>& prompt, const GenP
     // ---- draft k tokens from the trunk state + the token just emitted
     int prev = t0;
     std::vector<int> drafts;
+    draft_top8.clear();
     for (int i = 0; i < k && (int)out.size() + (int)drafts.size() < p.max_tokens; i++) {
       int d = mtp_step(prev, pos_ + i);
       drafts.push_back(d);
+      if (stats) {                                   // mtp_step leaves the draft's logits in host_logits
+        std::array<int, 8> top{};
+        for (int j = 0; j < 8; j++) {
+          int best = -1; float bv = -1e30f;
+          for (int v = 0; v < vocab; v++) {
+            if (__half2float(w0.host_logits[v]) <= bv) continue;
+            bool seen = false;
+            for (int q = 0; q < j; q++) if (top[q] == v) seen = true;
+            if (!seen) { bv = __half2float(w0.host_logits[v]); best = v; }
+          }
+          top[j] = best < 0 ? 0 : best;
+        }
+        draft_top8.push_back(top);
+      }
       prev = d;
     }
     drafted += (long long)drafts.size();
@@ -1601,6 +1652,14 @@ std::vector<int> Runner::generate_mtp(const std::vector<int>& prompt, const GenP
     int a = 0;
     while (a < (int)drafts.size() && argmax_of(host_logits_multi_ + (size_t)a * vocab) == drafts[a]) a++;
     const int bonus = argmax_of(host_logits_multi_ + (size_t)a * vocab);
+    if (stats) {
+      for (int i = 0; i < (int)draft_top8.size(); i++) {
+        int want = argmax_of(host_logits_multi_ + (size_t)i * vocab);
+        int rank = 8;                                  // 8 means "outside the draft's top-8"
+        for (int j = 0; j < 8; j++) if (draft_top8[i][j] == want) { rank = j; break; }
+        rank_hist[rank]++;
+      }
+    }
     rounds++;
     accepted_total += a;
     // ---- emit only the newly verified tokens: the accepted drafts and the trunk's own next token
@@ -1621,6 +1680,13 @@ std::vector<int> Runner::generate_mtp(const std::vector<int>& prompt, const GenP
     seed_draft_hidden(seed_row);
     t0 = bonus;
     tm_.decode_ms += now_ms() - t_round;
+  }
+  if (stats) {
+    fprintf(stderr, "[mtpstats] rank of the trunk's token in the draft's top-8 (k=%d): ", k);
+    for (int i = 0; i < 8; i++) fprintf(stderr, "%d:%.0f%% ", i + 1, 100.0 * rank_hist[i] /
+                                          (double)std::max<long long>(1, drafted));
+    fprintf(stderr, "outside:%.0f%%\n", 100.0 * rank_hist[8] /
+            (double)std::max<long long>(1, drafted));
   }
   if (getenv("HELIOS_MTP_TOKENS")) {
     fprintf(stderr, "[toks]");

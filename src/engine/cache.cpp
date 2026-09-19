@@ -4,15 +4,26 @@
 
 namespace helios {
 
-CachePlan Cache::plan(const Config& cfg, int cap, bool mtp_draft) {
+// The raw indexer ring must hold every row a single call writes or reads: a chunk of `chunk` rows,
+// plus four so that decode's one-token calls still see the three rows before them. Resume positions
+// are pool-aligned (see prefix_plan), so a chunk never starts mid-group.
+int Cache::raw_ring_rows(int cap, int max_chunk) {
+  int rows = max_chunk > 0 ? max_chunk + POOL : 512 + POOL;
+  if (rows < 16) rows = 16;
+  return rows;
+}
+
+CachePlan Cache::plan(const Config& cfg, int cap, bool mtp_draft, int max_chunk) {
   CachePlan p;
   p.cap = cap;
   for (int l = 0; l < cfg.n_layers; l++) (cfg.attn[l] == MLA ? p.n_mla : p.n_kda)++;
   if (mtp_draft && cfg.has_mtp) p.n_mla++;     // +1 slot for the MTP draft layer
   size_t b = 0;
+  const int ring = raw_ring_rows(cap, max_chunk);
   b += (size_t)p.n_mla * cap * 512 * 2;                  // ckv fp16
-  b += (size_t)p.n_mla * cap * 256 * 2;                  // idx plane k||gate
-  b += (size_t)p.n_mla * ((size_t)cap / 4) * 128 * 2;    // pool keys
+  b += (size_t)p.n_mla * (size_t)ring * 256 * 2;         // idx ring k||gate (not per-token)
+  b += (size_t)p.n_mla * ((size_t)cap / 4) * 128 * 2;    // pool keys (pool-major; the scalar
+                                                         // kernel's [c][p] mirror is not allocated)
   b += (size_t)p.n_kda * 24576 * 4 * 2;                  // conv ring bf16, K=4
   b += (size_t)p.n_kda * 64 * 128 * 128 * 4;             // rec state fp32
   p.bytes = b;
@@ -22,7 +33,8 @@ CachePlan Cache::plan(const Config& cfg, int cap, bool mtp_draft) {
 bool Cache::init(const Model& m, int cap, int max_chunk, bool mtp_draft) {
   Device& g0 = Engine::instance().gpu(0);
   HELIOS_CUDA_CHECK(cudaSetDevice(g0.phys_idx()));
-  CachePlan p = plan(m.cfg, cap, mtp_draft);
+  CachePlan p = plan(m.cfg, cap, mtp_draft, max_chunk);
+  raw_rows_ = raw_ring_rows(cap, max_chunk);
   mtp_ord_ = (mtp_draft && m.cfg.has_mtp) ? p.n_mla - 1 : -1;
   cap_ = cap;
   n_mla_ = p.n_mla; n_kda_ = p.n_kda;
@@ -33,8 +45,7 @@ bool Cache::init(const Model& m, int cap, int max_chunk, bool mtp_draft) {
     return q;
   };
   ckv_ = (half*)A((size_t)p.n_mla * cap * 512 * 2);
-  idx_plane_ = (half*)A((size_t)p.n_mla * cap * 256 * 2);
-  pool_k_ = (half*)A((size_t)p.n_mla * ((size_t)cap / 4) * 128 * 2);
+  idx_ring_ = (half*)A((size_t)p.n_mla * (size_t)raw_rows_ * 256 * 2);
   pool_k_nt_ = (half*)A((size_t)p.n_mla * ((size_t)cap / 4) * 128 * 2);
   kda_conv_ = (char*)A((size_t)p.n_kda * 24576 * 4 * 2);
   kda_rec_ = (float*)A((size_t)p.n_kda * 64 * 128 * 128 * 4, 1024);
@@ -54,10 +65,10 @@ bool Cache::init(const Model& m, int cap, int max_chunk, bool mtp_draft) {
   kda_mqkv = (half*)A((size_t)24576 * maxM * 2);
   kda_out = (half*)A((size_t)maxM * 64 * 128 * 2);
 
-  printf("[cache] cap=%d tokens mla=%d kda=%d kv=%.2fGB total=%.2fGB maxM=%d\n",
+  printf("[cache] cap=%d tokens mla=%d kda=%d kv=%.2fGB total=%.2fGB maxM=%d idx_ring=%d rows\n",
          cap, p.n_mla, p.n_kda, (double)p.bytes / GiB,
          (double)(p.bytes + (size_t)maxM * (4096 * 2 * 2 + 4 * 4096 * 4 + 24576 * 2 + 16384 * 2 + 8192 * 2 + 8192 * 4 + 64 * 128 * 4 + 64 * 2 + 24576 * 2 + 64 * 128 * 2) + (size_t)m.cfg.vocab * 2) / GiB,
-         maxM);
+         maxM, raw_rows_);
   return true;
 }
 

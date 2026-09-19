@@ -117,6 +117,7 @@ private:
   SlotMgr* sm_ = nullptr;
   Tokenizer* tk_ = nullptr;
   int max_chunk_ = 256;
+  int idx_block_ = 1024;           // rows the indexer scores per launch (bounds the score matrix)
   int pos_ = 0;
   int last_rows_ = 0;              // rows produced by the most recent run_chunk (seed row for MTP)
 

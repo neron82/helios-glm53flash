@@ -12,6 +12,9 @@
 
 namespace helios {
 
+// Tokens per indexer pool; a resume must be a multiple of this (see below).
+inline constexpr int POOL_TOKENS = 4;
+
 struct PrefixPlan {
   int common = 0;        // tokens the prompt shares with the resident history
   int resume = 0;        // position to resume at (0 = recompute the whole prompt)
@@ -51,6 +54,10 @@ inline PrefixPlan prefix_plan(const std::vector<int32_t>& hist, int pos,
     pl.slot = -1;
     pl.resume = 0;                                   // no usable snapshot: recompute from the start
   }
+  // Resumes must land on a pool boundary: the indexer's raw rows are a ring, so a group must never
+  // straddle a position jump (within a chunk, and across decode steps, they are contiguous). Rounding
+  // down costs at most three tokens of recompute.
+  pl.resume -= pl.resume % POOL_TOKENS;
   return pl;
 }
 

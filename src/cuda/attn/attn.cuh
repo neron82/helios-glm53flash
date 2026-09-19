@@ -47,13 +47,12 @@ void indexer_score_legacy(
     const half* q_idx, const half* pool_k, const half* w, const int* q_pos, half* scores,
     int m, int npools, int pk_stride, Stream s = 0);
 void indexer_score(
-    const half* q_idx,    // [m, 32, 128]
-    const half* pool_k,   // [128][pk_stride] transposed pool keys
-    const half* w,        // [m, 32] weights_proj outputs
-    const int* q_pos,     // [m] device int32 absolute positions
-    half* scores,         // out [m, npools] (invisible entries = -inf)
-    int m, int npools, int pk_stride, Stream s = 0,
-    const half* pool_k_nt = nullptr);   // [npools][128] pool-major mirror: enables the mma path
+    const half* q_idx,      // [m, 32, 128]
+    const half* pool_k_nt,  // [npools][128] pool-major pool keys (the mma B operand)
+    const half* w,          // [m, 32] weights_proj outputs
+    const int* q_pos,       // [m] device int32 absolute positions
+    half* scores,           // out [m, npools] (invisible entries = -inf)
+    int m, int npools, Stream s = 0);
 
 // Expand top pool indices to raw token indices: pool*4 + 0..3, clipped to [0, cur_pos];
 // plus tail tokens (cur_pos-3 .. cur_pos) forced in (dedup handled by attention masking
@@ -72,19 +71,20 @@ void pool_expand_row(
     int* raw_idx,         // out [m, 512*4 + 4]
     int m, Stream s = 0);
 
-// Write raw idx plane [k||gate] 256/token and complete pool keys:
-//   pool_k[p,c] = 0.25 * sum_i softmax_c(gate[p*4+i] + APE[i]) * k[p*4+i]
-// softmax over the 4 members channelwise. Called after tokens are appended; n_new tokens
-// starting at pos_start. A pool is written by whichever call writes its LAST member, using the raw
-// rows of its earlier members, which are still in the plane (same sequence, position-addressed).
+// Write the raw k||gate rows for n_new tokens from pos_start into the ring and complete the pool
+// keys of every group whose last member is now written:
+//   pk_nt[p,c] = 0.25 * sum_i softmax_c(gate[p*4+i] + APE[i]) * k[p*4+i]
+// softmax over the 4 members channelwise. A pool is completed by whichever call writes its LAST
+// member, reading the earlier members' rows back out of the ring (they are contiguous in position:
+// a chunk, or one decode step at a time).
 void kpool_write(
     const half* idx_k,    // [n_new, 128] conv'd indexer keys
     const half* idx_g,    // [n_new, 128] indexer gates
-    half* raw_plane,      // [Tmax, 256] k||gate interleaved rows
-    half* pool_k,         // [128][pk_stride] transposed pool keys
+    half* raw_ring,       // [raw_rows, 256] k||gate rows, indexed by position modulo raw_rows
+    int raw_rows,         // ring size; must exceed the tokens per call (plus 3 during decode)
+    half* pool_k_nt,      // [pk_stride][128] pool-major pool keys (the mma B operand)
     const float* ape,     // [4, 128] fp32
-    int pos_start, int n_new, int pk_stride, Stream s = 0,
-    half* pool_k_nt = nullptr);   // optional [pk_stride][128] pool-major mirror (mma B operand)
+    int pos_start, int n_new, Stream s = 0);
 
 // ---- MLA sparse decode ----
 // Flash-style gather over selected tokens. Each (m,h) row: online softmax fp32 over

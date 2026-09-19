@@ -159,9 +159,11 @@ int main(int argc, char** argv) {
       cudaSetDevice(Engine::instance().gpu(0).phys_idx()); cudaMemGetInfo(&f0, &t0);
       cudaSetDevice(Engine::instance().gpu(1).phys_idx()); cudaMemGetInfo(&f1, &t1);
       cudaSetDevice(Engine::instance().gpu(0).phys_idx());
-      printf("[mem] gpu0 used %.2f GB free %.2f | gpu1 used %.2f GB free %.2f\n",
+      printf("[mem] gpu0 used %.2f GB free %.2f (pool %.2f) | gpu1 used %.2f GB free %.2f (pool %.2f)\n",
              (t0 - f0) / 1073741824.0, f0 / 1073741824.0,
-             (t1 - f1) / 1073741824.0, f1 / 1073741824.0);
+             Engine::instance().gpu(0).pool_used() / 1073741824.0,
+             (t1 - f1) / 1073741824.0, f1 / 1073741824.0,
+             Engine::instance().gpu(1).pool_used() / 1073741824.0);
     }
     if (do_gen) {
       std::vector<ChatMsg> msgs = {{"user", gen_text.empty() ? "Hello!" : gen_text}};

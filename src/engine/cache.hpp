@@ -16,19 +16,25 @@ class Cache {
 public:
   // Computes layout and allocates from gpu0's bump pool. Layers index by their ordinal
   // among MLA / KDA layers (Model::cfg.attn order).
-  CachePlan plan(const Config& cfg, int cap, bool mtp_draft = false);
+  CachePlan plan(const Config& cfg, int cap, bool mtp_draft = false, int max_chunk = 512);
+  static int raw_ring_rows(int cap, int max_chunk);
   // mtp_draft: also allocate one extra MLA cache slot for the MTP draft layer (its K/V come from
   // its own projections, so it cannot share the trunk's cache rows).
   bool init(const Model& m, int cap, int max_chunk = 512, bool mtp_draft = false);
 
   // ---- MLA ----
   half* ckv(int mla_ord) const { return ckv_ + (size_t)mla_ord * cap_ * 512; }
-  half* idx_plane(int mla_ord) const { return idx_plane_ + (size_t)mla_ord * cap_ * 256; }
-  half* pool_k(int mla_ord) const { return pool_k_ + (size_t)mla_ord * (cap_ / 4) * 128; }
+  // Raw [k||gate] rows exist only so a pool key can be completed from the four members of its group,
+  // and only rows still in flight can be needed: the current call's, plus (during decode, one token
+  // per call) the three before them. They live in a ring of `raw_rows` rows, indexed by position
+  // modulo that size, instead of one row per token of context.
+  half* idx_ring(int mla_ord) const { return idx_ring_ + (size_t)mla_ord * raw_rows_ * 256; }
+  int raw_rows() const { return raw_rows_; }
   // Pool-major mirror [p][128]: the tensor-core indexer feeds the pool keys to mma as the B operand
   // in column-major form, which is exactly [p][d] contiguous in d. Storing it at write time avoids a
   // transposing (and cache-line-thrashing) load in every one of the ~500k indexer blocks per layer.
   half* pool_k_nt(int mla_ord) const { return pool_k_nt_ + (size_t)mla_ord * (cap_ / 4) * 128; }
+  static constexpr int POOL = 4;   // tokens per indexer pool (mirrors attn::POOL)
 
   // ---- KDA ----  (conv state is bf16 [24576, K=4] per KDA layer)
   void* kda_conv(int kda_ord) const { return kda_conv_ + (size_t)kda_ord * 24576 * 4 * 2; }
@@ -63,7 +69,8 @@ private:
   size_t cap_ = 0;
   int len_ = 0;
   int n_mla_ = 0, n_kda_ = 0, mtp_ord_ = -1;
-  half *ckv_ = nullptr, *idx_plane_ = nullptr, *pool_k_ = nullptr, *pool_k_nt_ = nullptr;
+  half *ckv_ = nullptr, *idx_ring_ = nullptr, *pool_k_nt_ = nullptr;
+  int raw_rows_ = 0;
   char* kda_conv_ = nullptr;   // bf16 conv ring, [kda][24576][4]
   float* kda_rec_ = nullptr;
 };
