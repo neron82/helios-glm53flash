@@ -1374,11 +1374,15 @@ verified but opt-in for the reasons recorded above.
    `HELIOS_LAYER_MAJOR=1`; single-chunk layer-major works and has no theoretical advantage over one
    large chunk, so this is low priority.
 5. **MTP speculative decoding: REMOVED** (see the Round 2 section at the top). It was verified
-   correct but measured 26-57% *slower* on wall clock, for two measured reasons: a verified row costs
-   ~1.7x a standalone decode row (each row activates a different expert set, so batching does not
-   amortise the MoE), and the draft head's top-1 rate is ~36%, which caps acceptance well below the
-   ~73% break-even. The earlier "+5.8%" was a metric artifact (`tm_.decode_tokens` counted verified
-   rows, not emitted tokens) and is retracted. The `Model::mtp` weights are still loaded from the
+   correct but measured 26-57% *slower* on wall clock. The binding reason is that a verified row costs
+   ~1.7x a standalone decode row (11.5 ms of MoE per layer for a 4-row verify against 1.7 ms for one
+   decode step), because each row activates a different expert set and brings its own slabs and
+   per-expert overheads rather than sharing the previous row's. A round of k+1 rows therefore costs
+   1.7(k+1) solo-row equivalents and emits at most k+1 tokens: the best case is (k+1)/1.7(k+1) = 0.59
+   *at any k and any accept rate* - even a draft head that was never wrong would be ~41% slower. The
+   draft head's own top-1 rate (~36%) is a second, smaller reason: it explains why the measured case is
+   26-57% rather than the ideal-head 41%. The earlier "+5.8%" was a metric artifact
+   (`tm_.decode_tokens` counted verified rows, not emitted tokens) and is retracted. The `Model::mtp` weights are still loaded from the
    checkpoint (they are part of the arena layout), but nothing runs them.
 6. **The engine is not bit-reproducible run-to-run** (two identical baseline runs diverge around
    token 10), almost certainly fp non-associativity in the MoE's accumulation order. Any A/B

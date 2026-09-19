@@ -386,11 +386,14 @@ Compressing the KV to q8_0 was evaluated and **not implemented**, for three meas
   `reasoning_effort` in a request falls back to the server default rather than being coerced to `max`.
 - **MTP speculative decoding is a net loss and is retained only as an opt-in experiment.** Measured
   on wall clock for identical output (120 tokens, greedy): 16.8 s with MTP off, 20.6 s at k=1, 29.2 s
-  at k=3 — 26% and 57% slower. Two measured reasons: the draft head's top-1 rate is ~36% (so the
-  acceptance ceiling is the model's head, and filling the draft's KV cache — which was never written,
-  and now is — improves its rank quality without moving that number), and a verified row costs ~1.7×
-  a standalone decode row because each row activates a different expert set (a 4-row verify spends
-  11.5 ms of MoE per layer against 1.7 ms for one decode step).
+  at k=3 — 26% and 57% slower. The binding reason is that a verified row costs ~1.7× a standalone
+  decode row (a 4-row verify spends 11.5 ms of MoE per layer against 1.7 ms for one decode step),
+  because each row activates a different expert set instead of sharing the previous row's slabs. A
+  round of k+1 rows costs 1.7(k+1) solo-row equivalents and emits at most k+1 tokens, so its best case
+  is 0.59 **at any k and any accept rate** — a draft head that was never wrong would still be ~41%
+  slower, which is why no head quality or acceptance rule rescues it. The draft head's own top-1 rate
+  (~36%, and it attends over a KV cache that was never populated until this round) is a second, smaller
+  reason: it says why the measured case is 26–57% rather than the ideal-head 41%.
 - **A prompt that leaves no room truncates the prompt, not the output.** The KV capacity (`--cap`)
   is a hard ceiling: generation stops when it is reached and reports `finish_reason: "length"`, and a
   prompt longer than the remaining capacity is truncated (with a log line) so that generation has
