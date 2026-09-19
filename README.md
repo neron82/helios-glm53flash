@@ -162,6 +162,17 @@ reaping and a wait for the previous instance's VRAM to be released:
 ./scripts/helios_server.sh stop
 ```
 
+It starts with the settings this engine is meant to be used with, so nothing has to be passed
+explicitly: **`--cap 524288`** (512k tokens of KV; the cache is allocated up front, so GPU0 must be
+able to hold it — the script waits for that and says so rather than aborting inside the allocator) and
+**cross-request prefix caching on** (`--prefix-snap-mb 4096 --prefix-interval 8192`; snapshots live in
+pinned host memory, so this costs no VRAM). Every value stays overridable from the environment:
+`CAP`, `CHUNK`, `PREFIX_SNAP_MB`, `PREFIX_INTERVAL`, `REASONING_EFFORT`, `GPU0_NEED_MIB`, `MIN_FREE_MIB`.
+
+Measured on that configuration: a 26,622-token prompt prefills in 77.6 s (343 tok/s) and the *same*
+prompt re-sent answers in **1.4 s (53.6×)** with the retrieval intact — the engine resumes at token
+26620 of 26622.
+
 ## Parameters
 
 ### Command line

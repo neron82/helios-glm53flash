@@ -13,15 +13,26 @@ BIN=${BIN:-$HELIOS_DIR/build/helios}
 MODEL_DIR=${MODEL_DIR:-$HOME/models/glm53flash}
 PORT=${PORT:-8080}
 HOST=${HOST:-0.0.0.0}
-# 262144 is the model's native window; the engine allocates its KV cache for
-# the full value, so lowering it frees VRAM for more resident experts.
-CAP=${CAP:-262144}
+# 512k tokens of KV, the default this server ships with. The engine allocates the cache up front, so
+# this is what GPU0 must be able to hold; the cap is limited by GPU0 VRAM, not by the model (whose
+# native window is 1M). Measured: KV 3.10 GB at cap 262144 (19.6 GB of GPU0 in total) and 6.20 GB at
+# 540000 (22.8 GB), so 524288 leaves ~0.9 GB of headroom. Lower it to free VRAM for other work.
+CAP=${CAP:-524288}
 # Prefill batch size. Large values only cost scratch memory (~1.8 GB at 8192)
 # and make long prompts much faster; short prompts are unaffected because the
 # chunk is clamped to the prompt length.
 CHUNK=${CHUNK:-8192}
 # Empty = no auth. Set for anything reachable beyond localhost.
 API_KEY=${API_KEY:-}
+# Cross-request prefix caching is on by default and costs no VRAM: the cache planes are
+# position-addressed and simply survive between requests, so a prompt that continues or re-sends the
+# resident history resumes inside it instead of prefilling from token 0. The KDA recurrence is not
+# position-addressed, so its state is snapshotted into *pinned host memory* (142 MB per snapshot, no
+# VRAM) every PREFIX_INTERVAL tokens; a request that diverges from the history resumes from the
+# newest snapshot at or below the divergence. 4096 MB holds 28 snapshots, ~229k tokens of history at
+# the default interval. PREFIX_SNAP_MB=0 keeps extension-only reuse and uses no host memory.
+PREFIX_SNAP_MB=${PREFIX_SNAP_MB:-4096}
+PREFIX_INTERVAL=${PREFIX_INTERVAL:-8192}
 # Default reasoning effort for requests that do not set one: low | high | max.
 # Measured on a "review this README" prompt with a 4000-token budget:
 #   low  -> 488 tokens total,  664 chars of reasoning, 1355 chars of answer,  37 s
@@ -36,9 +47,14 @@ SERVER_LOCK_FILE=${SERVER_LOCK_FILE:-${XDG_RUNTIME_DIR:-/tmp}/helios-port-${PORT
 STARTUP_TIMEOUT=${STARTUP_TIMEOUT:-300}
 # The driver keeps a dead context's VRAM for a few seconds after the process
 # exits, so a stop-then-start can otherwise fail outright or silently shrink the
-# expert pool. Wait for the smallest free-VRAM figure across the two GPUs to
-# reach MIN_FREE_MIB, up to VRAM_WAIT seconds.
+# expert pool. Wait up to VRAM_WAIT seconds for both cards to have what they need.
 MIN_FREE_MIB=${MIN_FREE_MIB:-16000}
+# GPU1 holds the expert pool and sizes it from whatever is free, so a smaller figure still yields a
+# working (if slower) server: 16 GB is the floor. GPU0 holds the trunk, the KV cache and the
+# per-chunk workspaces, and unlike the pool its need grows with --cap: ~17.1 GB fixed plus ~11.6 KB
+# per token of capacity (measured at cap 262144 and at 540000). Waiting for that turns an
+# out-of-memory abort into a clear message.
+GPU0_NEED_MIB=${GPU0_NEED_MIB:-$(( 17500 + CAP * 11063 / 1000000 ))}
 VRAM_WAIT=${VRAM_WAIT:-60}
 
 COMMAND=start
@@ -126,19 +142,20 @@ pid_start_line() {
     printf '%s %s\n' "$pid" "$start"
 }
 
-# The engine needs ~21.6 GB per card when the pool is large, but it sizes the
-# expert pool from whatever is free, so a somewhat smaller figure still yields a
-# working (if slower) server. 16 GB is the floor that guarantees it starts.
+# The two cards need different things, so check them separately: GPU0's figure follows --cap
+# (GPU0_NEED_MIB) while GPU1 only has a floor (MIN_FREE_MIB).
 wait_vram() {
     command -v nvidia-smi >/dev/null 2>&1 || return 0
-    local deadline=$((SECONDS + VRAM_WAIT)) free
+    local deadline=$((SECONDS + VRAM_WAIT)) f0 f1
     while :; do
-        free=$(nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits 2>/dev/null | sort -n | head -1)
-        if [[ -n "$free" && "$free" -ge "$MIN_FREE_MIB" ]]; then
+        # `tr` leaves no trailing newline, so this read always reports EOF - which `set -e` would
+        # treat as a failure and abort the script before a single line of output.
+        read -r f0 f1 < <(nvidia-smi --query-gpu=memory.free --format=csv,noheader,nounits 2>/dev/null | tr '\n' ' ') || true
+        if [[ -n "${f0:-}" && -n "${f1:-}" ]] && (( f0 >= GPU0_NEED_MIB && f1 >= MIN_FREE_MIB )); then
             return 0
         fi
         if (( SECONDS >= deadline )); then
-            echo "warning: only ${free:-?} MiB free per GPU after ${VRAM_WAIT}s (wanted $MIN_FREE_MIB) - starting anyway" >&2
+            echo "warning: after ${VRAM_WAIT}s GPU0 has ${f0:-?} MiB free (cap $CAP needs $GPU0_NEED_MIB) and GPU1 has ${f1:-?} MiB (wants $MIN_FREE_MIB) - starting anyway" >&2
             return 0
         fi
         sleep 2
@@ -198,13 +215,15 @@ start() {
         mv -f "$LOG_FILE" "$LOG_FILE.1"
     fi
 
-    local args=(serve "$MODEL_DIR" --host "$HOST" --port "$PORT" --cap "$CAP" --chunk "$CHUNK")
+    local args=(serve "$MODEL_DIR" --host "$HOST" --port "$PORT" --cap "$CAP" --chunk "$CHUNK"
+                --prefix-snap-mb "$PREFIX_SNAP_MB" --prefix-interval "$PREFIX_INTERVAL")
     [[ -n "$API_KEY" ]] && args+=(--api-key "$API_KEY")
     [[ -n "$REASONING_EFFORT" ]] && args+=(--reasoning-effort "$REASONING_EFFORT")
 
     # Export too, so /proc/<pid>/environ carries the identity the checks look for.
     MODEL_DIR="$MODEL_DIR" PORT="$PORT" HOST="$HOST" CAP="$CAP" CHUNK="$CHUNK" \
         REASONING_EFFORT="$REASONING_EFFORT" \
+        PREFIX_SNAP_MB="$PREFIX_SNAP_MB" PREFIX_INTERVAL="$PREFIX_INTERVAL" \
         nohup "$BIN" "${args[@]}" >>"$LOG_FILE" 2>&1 9>&- &
     local pid=$!
     pid_start_line "$pid" >"$PID_FILE"

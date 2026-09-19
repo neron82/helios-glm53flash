@@ -81,9 +81,14 @@ A running engine that serves GLM-5.3-Flash-exl3 (2.05 bpw), with a KV capacity o
 
 - `helios gen` / `helios serve` produce coherent output; HTTP (`/health`, `/v1/models`,
   `/v1/completions`, `/v1/chat/completions` incl. SSE, `/metrics`) verified with curl.
-- **Cross-request prefix caching is in** (see the section below): a re-sent prompt answers in 1.3 s
-  instead of 44 s (33.6x), the next chat turn in 4.8 s (9.2x), with KDA-state snapshots in pinned host
-  RAM so the feature costs no VRAM.
+- **Cross-request prefix caching is in and on by default** (see the section below): a re-sent prompt
+  answers in 1.3 s instead of 44 s (33.6x), the next chat turn in 4.8 s (9.2x), with KDA-state
+  snapshots in pinned host RAM so the feature costs no VRAM.
+- `~/models/helios_glm53_server.sh` (repo copy in `scripts/`) now starts with **`--cap 524288`** and
+  the prefix cache explicitly enabled, so neither has to be requested per launch. Verified on that
+  configuration: `[cache] cap=524288 ... kv=6.03GB` with 0.93 GB of GPU0 headroom, `/v1/models`
+  reporting `context_length: 524288`, and a 26,622-token prompt going 77.6 s cold -> **1.4 s re-sent
+  (53.6x)** with `prefix_reused_tokens: 26620`.
 - `--cap 540000` allocates `[cache] cap=540000 tokens mla=11 kda=34 kv=6.20GB total=8.58GB
   maxM=8192 idx_ring=8196 rows` (11 MLA layers of 512-wide fp16 latents + 34 KDA recurrent states +
   indexer pool planes; at cap 262144 it is `kv=3.10GB total=5.48GB`), plus a 3053-slot expert pool
