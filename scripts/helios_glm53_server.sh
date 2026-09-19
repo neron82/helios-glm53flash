@@ -50,11 +50,14 @@ STARTUP_TIMEOUT=${STARTUP_TIMEOUT:-300}
 # expert pool. Wait up to VRAM_WAIT seconds for both cards to have what they need.
 MIN_FREE_MIB=${MIN_FREE_MIB:-16000}
 # GPU1 holds the expert pool and sizes it from whatever is free, so a smaller figure still yields a
-# working (if slower) server: 16 GB is the floor. GPU0 holds the trunk, the KV cache and the
-# per-chunk workspaces, and unlike the pool its need grows with --cap: ~17.1 GB fixed plus ~11.6 KB
-# per token of capacity (measured at cap 262144 and at 540000). Waiting for that turns an
-# out-of-memory abort into a clear message.
-GPU0_NEED_MIB=${GPU0_NEED_MIB:-$(( 17500 + CAP * 11063 / 1000000 ))}
+# working (if slower) server: 16 GB is the floor. GPU0 holds the trunk, the KV cache and the per-chunk
+# scratch, and unlike the pool its need grows with *both* --cap and --chunk: ~6.4 GB fixed, plus
+# ~1.29 MiB per row of chunk (every activation workspace is sized by the chunk) and ~11.9 KB per token
+# of capacity. The constants are fitted to two measured points - cap 262144 / chunk 8192 used 19.6 GB,
+# cap 524288 / chunk 8192 used 22.6 GB - and reproduce both to within 5 MiB. Waiting for this turns an
+# out-of-memory abort into a clear message; if something else has to share GPU0 (a small model living
+# alongside the engine), lower CAP or CHUNK until GPU0_NEED_MIB plus that model fits in 24 GB.
+GPU0_NEED_MIB=${GPU0_NEED_MIB:-$(( 6400 + CHUNK * 1287 / 1000 + CAP * 11874 / 1000000 ))}
 VRAM_WAIT=${VRAM_WAIT:-60}
 
 COMMAND=start
@@ -155,7 +158,7 @@ wait_vram() {
             return 0
         fi
         if (( SECONDS >= deadline )); then
-            echo "warning: after ${VRAM_WAIT}s GPU0 has ${f0:-?} MiB free (cap $CAP needs $GPU0_NEED_MIB) and GPU1 has ${f1:-?} MiB (wants $MIN_FREE_MIB) - starting anyway" >&2
+            echo "warning: after ${VRAM_WAIT}s GPU0 has ${f0:-?} MiB free (cap $CAP / chunk $CHUNK needs $GPU0_NEED_MIB) and GPU1 has ${f1:-?} MiB (wants $MIN_FREE_MIB) - starting anyway" >&2
             return 0
         fi
         sleep 2
