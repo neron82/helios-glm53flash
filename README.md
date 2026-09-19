@@ -68,7 +68,7 @@ flowchart LR
     end
     subgraph G1["GPU1 — fast PCIe x16 card"]
         P["Expert slot pool\n(18 GB, 3053 slabs)"]
-        R["Routers + MoE scratch\n+ MTP experts"]
+        R["Routers + MoE scratch"]
     end
     A -->|"pinned DMA, fast link"| P
     T <-->|"one activation hop per layer"| P
@@ -108,8 +108,6 @@ per chunk against a 120-token decode's ~41k. Switching to the census took reside
   workload it is actually serving.
 - **OpenAI-compatible HTTP server**: `/health`, `/v1/models`, `/v1/completions`,
   `/v1/chat/completions` including SSE streaming, `/metrics`.
-- **MTP speculative decoding**, correctness-verified token-identical to the non-drafting path and
-  opt-in (see Limitations).
 - **Custom CUDA kernels throughout**: the EXL3 trellis decode, MLA sparse decode, the pooled
   indexer with tensor-core scoring, the KDA recurrence, the mHC mixing/Sinkhorn path, and tiled fp16
   GEMMs for the absorbed projections — each with a parity test against a CPU reference.
@@ -178,7 +176,7 @@ reaping and a wait for the previous instance's VRAM to be released:
 | `--max-tokens N` | 32768 | output length used when a request omits `max_tokens`; the engine has no other output cap |
 | `--reasoning-effort L` | **high** | default reasoning effort (`low`/`high`/`max`) for requests that omit one |
 | `--tokens N` | 64 | generation length for `gen` |
-| `--temp T` | 0.7 | sampling temperature; `0` is greedy and is the only mode MTP engages in |
+| `--temp T` | 0.7 | sampling temperature; `0` is greedy |
 | `--prompt S` / `--prompt-file F` | — | prompt text for `gen` |
 | `--prefix-snap-mb N` | 4096 | pinned host budget for prefix-cache KDA snapshots (142 MB each); `0` disables them and leaves extension-only reuse |
 | `--prefix-interval N` | 8192 | tokens between snapshots; smaller means less recompute after a divergence, larger means more history is reusable |
@@ -293,9 +291,13 @@ end-to-end quality gate this engine is developed against.
 Two of those are worth calling out because they framed the whole optimisation effort:
 
 - The MoE moves 2.07 GB of experts in 18.2 ms during decode — **114 GB/s and 0.95 TFLOPS**, i.e.
-  12% and 1.3% of the card's limits. At batch size 1 it is neither memory- nor compute-bound but
-  *occupancy*-bound, which is the theoretical case for speculative decoding; in practice that model's
-  MTP head only accepts 15–22% of drafts, so the win is small.
+  12% and 1.3% of the card's limits. That *looks* like the textbook case for speculative decoding, but
+  it is not: batching rows through it does not amortise, because each row activates a different expert
+  set (a 4-row batch costs 6.8x one row in MoE time). See the MTP entry in the table below.
+- The MoE's *prefill* rate is not limited by its trellis decode either: at the per-expert shape it
+  actually processes (M≈227, N=2048, K=4096), cuBLAS fp16 **without any decode** reaches 44.9 TFLOPS
+  while the fused kernel reaches 38 doing the decode plus the gather, Hadamards, activation and
+  scatter — inside ~18% of a decode-free ceiling. The limiter is the shape, not the decode.
 - Roughly a quarter of prefill wall time is PCIe, and about half of that is irreducible expert
   streaming: at this pool size (3053 slabs against 12,384 possible) the working set simply does not
   fit, and the measured best case is already close to the floor that the skew allows.

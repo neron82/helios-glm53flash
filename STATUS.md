@@ -69,7 +69,8 @@ smoke OK, prefix 42/42, tokenizer 28/28, utf8 PASS.
 
 ## Deliverable state (current build - see the log below for how it got here)
 
-A running engine that serves GLM-5.3-Flash-exl3 (2.05 bpw) at 250k context:
+A running engine that serves GLM-5.3-Flash-exl3 (2.05 bpw), with a KV capacity of 540k tokens
+(Round 2 raised it from 262k by reclaiming over-sized indexer buffers; see the top section):
 
 | metric | campaign start | **current** | evidence |
 |---|---|---|---|
@@ -83,9 +84,10 @@ A running engine that serves GLM-5.3-Flash-exl3 (2.05 bpw) at 250k context:
 - **Cross-request prefix caching is in** (see the section below): a re-sent prompt answers in 1.3 s
   instead of 44 s (33.6x), the next chat turn in 4.8 s (9.2x), with KDA-state snapshots in pinned host
   RAM so the feature costs no VRAM.
-- `--cap 262144` allocates `[cache] cap=262144 tokens mla=11 kda=34 kv=4.44GB total=6.81GB maxM=8192`
-  (11 MLA layers of 512-wide fp16 latents + 34 KDA recurrent states + indexer pool planes), plus a
-  3053-slot expert pool (17.99 GB, 6.035 MB/slab) on GPU1 fed from a 73 GB pinned RAM arena.
+- `--cap 540000` allocates `[cache] cap=540000 tokens mla=11 kda=34 kv=6.20GB total=8.58GB
+  maxM=8192 idx_ring=8196 rows` (11 MLA layers of 512-wide fp16 latents + 34 KDA recurrent states +
+  indexer pool planes; at cap 262144 it is `kv=3.10GB total=5.48GB`), plus a 3053-slot expert pool
+  (17.99 GB, 6.035 MB/slab) on GPU1 fed from a 73 GB pinned RAM arena; 0.74 GB of GPU0 headroom.
 - Suite status: attn parity, aux parity, gemm smoke, reconstruct and tokenizer 28/28 all pass.
 - The document below is a **chronological log**: several early sections are superseded, and the
   "Retracted measurements" section records conclusions that later proved wrong (MTP, the copy-path
