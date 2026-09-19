@@ -6,6 +6,7 @@
 #include "engine/cache.hpp"
 #include "engine/slotmgr.hpp"
 #include "engine/sampler.hpp"
+#include "engine/prefix.hpp"
 #include "tokenizer/tokenizer.hpp"
 #include <functional>
 #include <memory>
@@ -30,6 +31,22 @@ public:
   int pos() const { return pos_; }
   int context_cap() const { return c_ ? c_->cap() : 0; }
 
+  // ---- cross-request prefix cache ----
+  // The KV, indexer and pool planes are position-addressed and never cleared between requests, so a
+  // new request reuses them by resuming at a position R where its prompt matches the resident
+  // history. The only state that is *not* position-addressed is the KDA conv window and recurrent
+  // matrix, which is restored from a snapshot taken at R (the exact state is a pure function of the
+  // token prefix, so restoring it is equivalent to having computed it). Requests that merely extend
+  // the resident history - the multi-turn chat case - reuse it with no snapshot and no recompute.
+  // Configure before init() of the first sequence; snapshot bytes come from pinned host memory, not
+  // VRAM, which is the resource context length competes for.
+  void prefix_config(size_t budget_bytes, int interval);
+  int prefix_resume() const { return resume_; }      // tokens served from cache == resume position
+  int prefix_snapshot_count() const { return n_snaps_; }
+  int prefix_snapshot_interval() const { return snap_interval_; }
+  long long prefix_reuse_total() const { return reuse_total_; }
+  long long prefix_requests() const { return prefix_reqs_; }
+
   // Full generation loop (prompt already tokenized). on_token may return false to stop.
   std::vector<int> generate(const std::vector<int>& prompt, const GenParams& p,
                             const std::function<bool(int)>& on_token = nullptr);
@@ -49,6 +66,16 @@ public:
 
 private:
   void run_chunk(int n, int pos, bool prefill);
+
+  // ---- cross-request prefix cache (implementation) ----
+  // Decides the resume position for `prompt` against the resident history, restoring the KDA state
+  // (from a snapshot if the prompt diverges from the history, or keeping it if it merely extends it)
+  // and returning that position. `hist_` is the token sequence the caches currently hold.
+  int prefix_begin(const std::vector<int>& prompt);
+  void snap_capture(int pos);        // stage the KDA state and start its async copy into a host slot
+  void snap_restore(int slot);       // copy a snapshot back into the KDA layers
+  void kda_state_io(char* buf, bool save, cudaStream_t s);  // whole-model conv+recurrent state
+  void snap_drain();                 // wait for an in-flight capture copy
   // One transformer layer over `n` tokens whose mHC streams live at `streams` (R,H,D) contiguous.
   void layer_step(Layer& L, int n, int pos, float* streams);
   void kda_layer(Layer& L, int n, int pos);
@@ -92,6 +119,22 @@ private:
   int max_chunk_ = 256;
   int pos_ = 0;
   int last_rows_ = 0;              // rows produced by the most recent run_chunk (seed row for MTP)
+
+  // Prefix cache state. hist_ is the resident token sequence; every cache plane row [0, pos_) holds
+  // exactly these tokens, and every read is bounded by the query position, so rows past pos_ may
+  // hold stale data safely.
+  std::vector<int32_t> hist_;
+  char* snap_host_ = nullptr;      // pinned host ring of KDA-state snapshots [n_snaps_][stride]
+  char* snap_stage_ = nullptr;     // device staging buffer for snapshot captures
+  std::vector<int> snap_pos_;      // captured position per slot, -1 when empty
+  int n_snaps_ = 0, snap_next_ = 0, snap_last_ = 0;
+  cudaEvent_t snap_ev_ = nullptr;   // compute-stream staging copy done
+  cudaEvent_t snap_ev2_ = nullptr;  // host copy done (the staging buffer is free again)
+  int snap_interval_ = 8192;
+  size_t snap_stride_ = 0;
+  size_t snap_budget_ = (size_t)4096 * 1024 * 1024;   // 0 disables snapshots (extension-only)
+  int resume_ = 0;                 // tokens the last request reused / position it resumed at
+  long long reuse_total_ = 0, prefix_reqs_ = 0;
 
   // GPU0 scratch
   struct {

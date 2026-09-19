@@ -263,7 +263,12 @@ int run_server(Runner& runner, Tokenizer& tk, const std::string& host, int port,
            {"prefill_ms", t.prefill_ms}, {"prefill_tokens", t.prefill_tokens},
            {"decode_ms", t.decode_ms}, {"decode_tokens", t.decode_tokens},
            {"decode_tps", t.decode_ms > 0 ? t.decode_tokens * 1000.0 / t.decode_ms : 0.0},
-           {"prefill_tps", t.prefill_ms > 0 ? t.prefill_tokens * 1000.0 / t.prefill_ms : 0.0}};
+           {"prefill_tps", t.prefill_ms > 0 ? t.prefill_tokens * 1000.0 / t.prefill_ms : 0.0},
+           // Cross-request prefix cache: how much prompt work the resident history absorbed.
+           {"prefix_reused_tokens", runner.prefix_reuse_total()},
+           {"prefix_last_resume", runner.prefix_resume()},
+           {"prefix_snapshots", runner.prefix_snapshot_count()},
+           {"prefix_snapshot_interval", runner.prefix_snapshot_interval()}};
     res.set_content(j.dump(), "application/json");
   };
   srv.Get("/metrics", metrics);

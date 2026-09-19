@@ -238,6 +238,39 @@ bool Runner::init(Model& m, Cache& c, SlotMgr& sm, Tokenizer* tk, int max_chunk)
   }
   printf("[runner] max_chunk=%d moe_concurrency=%d gpu1_moe_scratch=%.1f MB\n", M, mp.concurrency,
          (2.0 * mp.concurrency * M * (4096 + 2048) * 2) / 1048576.0);
+  // ---- prefix-cache snapshots -------------------------------------------------------------
+  // Pinned host memory, not VRAM: snapshotting the KDA state (one conv window + one recurrent
+  // matrix per KDA layer) costs ~142 MB per snapshot, and VRAM is exactly the resource that limits
+  // context length, while host RAM is abundant. The capture is a D2D copy into a staging buffer on
+  // the compute stream plus an asynchronous copy to the host, so a capture costs ~0.3 ms on the
+  // critical path; a restore is a 142 MB H2D over GPU0's x4 link (~50 ms) once per divergent request.
+  {
+    const size_t stride = kda_state_bytes() * (size_t)n_kda;
+    snap_stride_ = stride;
+    const size_t budget = snap_budget_;      // 0 = snapshots off; 0 is a valid setting, not unset
+    int want = (int)(budget / (stride ? stride : 1));
+    if (want > 64) want = 64;
+    if (want > 0) {
+      if (cudaMallocHost((void**)&snap_host_, (size_t)want * stride) != cudaSuccess) {
+        fprintf(stderr, "[runner] prefix snapshots: pinned alloc of %.1f MB failed; disabled\n",
+                (double)want * stride / 1048576.0);
+        snap_host_ = nullptr;
+        want = 0;
+      } else {
+        snap_stage_ = (char*)A0(stride);
+        HELIOS_CUDA_CHECK(cudaEventCreateWithFlags(&snap_ev_, cudaEventDisableTiming));
+        HELIOS_CUDA_CHECK(cudaEventCreateWithFlags(&snap_ev2_, cudaEventDisableTiming));
+        HELIOS_CUDA_CHECK(cudaEventRecord(snap_ev2_, s0_stream()));   // starts out complete
+        snap_pos_.assign(want, -1);
+      }
+    }
+    n_snaps_ = want;
+    if (n_snaps_ > 0)
+      printf("[runner] prefix cache: %d KDA-state snapshots x %.1f MB pinned (%d-token interval)\n",
+             n_snaps_, stride / 1048576.0, snap_interval_);
+    else
+      printf("[runner] prefix cache: snapshots disabled (extension-only reuse)\n");
+  }
   reset();
   mtp_build();
   return true;
@@ -245,12 +278,100 @@ bool Runner::init(Model& m, Cache& c, SlotMgr& sm, Tokenizer* tk, int max_chunk)
 
 void Runner::reset() {
   pos_ = 0;
+  hist_.clear();
   Device& g0 = Engine::instance().gpu(0);
   // zero KDA states + ckv/idx planes are position-addressed, no clear needed beyond states
   HELIOS_CUDA_CHECK(cudaMemsetAsync(c_->kda_conv(0), 0, (size_t)c_->n_kda() * 24576 * 4 * 2, g0.stream(0)));
   HELIOS_CUDA_CHECK(cudaMemsetAsync(c_->kda_rec(0), 0, (size_t)c_->n_kda() * 64 * 128 * 128 * 4, g0.stream(0)));
   HELIOS_CUDA_CHECK(cudaStreamSynchronize(g0.stream(0)));
   tm_ = Timings{};
+}
+
+
+// ---------------------------------------------------------------- cross-request prefix cache
+// The planes (ckv, indexer raw rows, pool keys) are position-addressed, so they survive across
+// requests untouched; every read is bounded by the query position, which makes rows past the current
+// length harmless. What cannot be reused in place is the KDA recurrence: its conv window and
+// recurrent matrix are a function of the whole prefix, so a resume needs that state as of exactly the
+// resume position, which the snapshot ring supplies. Capturing costs one D2D copy on the compute
+// stream plus an asynchronous copy to pinned host memory, so captures stay off the critical path; the
+// snapshots live in host RAM because VRAM is what context length competes for.
+
+void Runner::prefix_config(size_t budget_bytes, int interval) {
+  snap_budget_ = budget_bytes;
+  if (interval > 0) snap_interval_ = interval;
+}
+
+void Runner::snap_drain() {
+  if (snap_ev2_) HELIOS_CUDA_CHECK(cudaEventSynchronize(snap_ev2_));
+}
+
+// Whole-model KDA state <-> a contiguous buffer, one entry per KDA ordinal.
+void Runner::kda_state_io(char* buf, bool save, cudaStream_t s) {
+  const size_t conv = (size_t)24576 * 4 * 2;
+  const size_t rec = (size_t)64 * 128 * 128 * 4;
+  for (int l = 0; l < m_->cfg.n_layers; l++) {
+    Layer& L = m_->layers[l];
+    if (L.kind != KDA || L.kda_ord < 0) continue;
+    const int o = L.kda_ord;
+    char* p = buf + (size_t)o * (conv + rec);
+    if (save) {
+      HELIOS_CUDA_CHECK(cudaMemcpyAsync(p, c_->kda_conv(o), conv, cudaMemcpyDeviceToDevice, s));
+      HELIOS_CUDA_CHECK(cudaMemcpyAsync(p + conv, c_->kda_rec(o), rec, cudaMemcpyDeviceToDevice, s));
+    } else {
+      HELIOS_CUDA_CHECK(cudaMemcpyAsync(c_->kda_conv(o), p, conv, cudaMemcpyDeviceToDevice, s));
+      HELIOS_CUDA_CHECK(cudaMemcpyAsync(c_->kda_rec(o), p + conv, rec, cudaMemcpyDeviceToDevice, s));
+    }
+  }
+}
+
+// The state at `pos` is captured only when it is final there, i.e. from the caller's chunk boundary.
+void Runner::snap_capture(int pos) {
+  if (n_snaps_ <= 0) return;
+  snap_drain();                                   // the staging buffer must be free
+  Device& g0 = Engine::instance().gpu(0);
+  cudaStream_t s = s0_stream();
+  kda_state_io(snap_stage_, /*save=*/true, s);
+  HELIOS_CUDA_CHECK(cudaEventRecord(snap_ev_, s));
+  cudaStream_t s3 = g0.stream(3);
+  HELIOS_CUDA_CHECK(cudaStreamWaitEvent(s3, snap_ev_, 0));
+  char* dst = snap_host_ + (size_t)snap_next_ * snap_stride_;
+  HELIOS_CUDA_CHECK(cudaMemcpyAsync(dst, snap_stage_, snap_stride_, cudaMemcpyDeviceToHost, s3));
+  HELIOS_CUDA_CHECK(cudaEventRecord(snap_ev2_, s3));
+  snap_pos_[snap_next_] = pos;
+  if (pos > snap_last_) snap_last_ = pos;
+  snap_next_ = (snap_next_ + 1) % n_snaps_;
+}
+
+void Runner::snap_restore(int slot) {
+  snap_drain();
+  kda_state_io(snap_host_ + (size_t)slot * snap_stride_, /*save=*/false, s0_stream());
+  // The H2D copies are enqueued on the compute stream, so they complete before the next chunk reads
+  // the state; the restored bytes are exactly what a fresh forward over the same prefix would leave.
+}
+
+int Runner::prefix_begin(const std::vector<int>& prompt) {
+  const int resident = std::min<int>((int)hist_.size(), pos_);   // for the debug line below
+  PrefixPlan pl = prefix_plan(hist_, pos_, prompt, snap_pos_);
+  if (pl.extend) {
+    resume_ = pl.resume;
+  } else if (pl.slot >= 0) {
+    snap_restore(pl.slot);
+    resume_ = pl.resume;
+  } else {
+    reset();
+    resume_ = 0;
+  }
+  if (resume_ > c_->cap()) { reset(); resume_ = 0; }
+  pos_ = resume_;
+  hist_.resize(resume_);
+  prefix_reqs_++;
+  reuse_total_ += resume_;
+  if (getenv("HELIOS_PREFIX_DEBUG"))
+    fprintf(stderr, "[prefix] prompt=%d resident=%d common=%d %s -> resume=%d\n",
+            (int)prompt.size(), resident, pl.common,
+            pl.extend ? "extension" : (resume_ ? "snapshot" : "restart"), resume_);
+  return resume_;
 }
 
 
@@ -1273,6 +1394,7 @@ const half* Runner::logits_dev() const { return (const half*)w0.logits16; }
 void Runner::prefill(const std::vector<int>& ids) {
   double t0 = now_ms();
   int n = (int)ids.size();
+  hist_.resize(pos_);            // invariant: hist_ is exactly what the caches hold
   // The KV/pool planes are position-addressed and bounded by the configured capacity: never let the
   // prefill run past it, or every cache write would index past its allocation.
   const int cap = c_->cap();
@@ -1289,9 +1411,16 @@ void Runner::prefill(const std::vector<int>& ids) {
   // experts once per super-chunk instead of once per chunk (much less PCIe traffic for long
   // prompts) but still trips an illegal access inside the MoE path, so it stays opt-in.
   if (getenv("HELIOS_LAYER_MAJOR") == nullptr) {
+    // The KDA state one token before the prompt end is the one a *re-sent* request resumes from (its
+    // prompt matches the resident history completely, and the last token is always re-run because the
+    // caller needs its logits). So the last chunk stops one token short and that state is snapshotted;
+    // the cost is a single 1-token chunk (~80 ms of expert streaming) per request, and it saves the
+    // whole 8192-token snapshot interval that would otherwise be recomputed.
+    const int tail = (n_snaps_ > 0 && n > 1) ? 1 : 0;
     int done0 = 0, last0 = 0, chunk0 = std::min(max_chunk_, n);
     while (done0 < n) {
       chunk0 = std::min(max_chunk_, n - done0);
+      if (tail && done0 + chunk0 == n && chunk0 > tail) chunk0 -= tail;
       last0 = chunk0;
       HELIOS_CUDA_CHECK(cudaMemcpyAsync(w0.tokens, ids.data() + done0, chunk0 * 4,
                                         cudaMemcpyHostToDevice, s0_stream()));
@@ -1302,6 +1431,11 @@ void Runner::prefill(const std::vector<int>& ids) {
                 now_ms() - c0, chunk0 * 1000.0 / (now_ms() - c0));
       pos_ += chunk0;
       done0 += chunk0;
+      hist_.insert(hist_.end(), ids.begin() + (done0 - chunk0), ids.begin() + done0);
+      // Snapshot at chunk granularity, plus the one-token-short state at the end of the prompt.
+      if (n_snaps_ > 0 &&
+          (pos_ - snap_last_ >= snap_interval_ || (tail && done0 == n - tail)))
+        snap_capture(pos_);
     }
     final_head(last0);
     tm_.prefill_ms += now_ms() - t0;
@@ -1330,9 +1464,11 @@ void Runner::prefill(const std::vector<int>& ids) {
       }
     }
     pos_ += sc;
+    hist_.insert(hist_.end(), ids.begin() + done, ids.begin() + done + sc);
     done += sc;
     HELIOS_CUDA_CHECK(cudaStreamSynchronize(s));
   }
+  if (n_snaps_ > 0 && pos_ != snap_last_) snap_capture(pos_);
   // final head from the last token of the last super-chunk
   {
     cudaStream_t s = s0_stream();
@@ -1349,6 +1485,7 @@ void Runner::decode(const std::vector<int>& ids) {
   HELIOS_CUDA_CHECK(cudaMemcpyAsync(w0.tokens, ids.data(), n * 4, cudaMemcpyHostToDevice, s0_stream()));
   run_chunk(n, pos_, false);
   pos_ += n;
+  hist_.insert(hist_.end(), ids.begin(), ids.end());
   final_head(n);
   tm_.decode_ms += now_ms() - t0;
   tm_.decode_tokens += n;
@@ -1402,6 +1539,9 @@ std::vector<int> Runner::generate_mtp(const std::vector<int>& prompt, const GenP
   // loop/emission bug from a draft/rollback bug. Default 3.
   const int k = getenv("HELIOS_MTP_K") ? atoi(getenv("HELIOS_MTP_K")) : 3;
   const int vocab = m_->cfg.vocab;
+  // The draft layer's cache and the KDA rollback are not part of the prefix cache, so this path
+  // starts from a clean sequence: it writes KV rows for rejected drafts and then rolls back, so the
+  // resident history it would leave behind is not the token sequence the planes describe.
   reset();
   prefill(prompt);
   std::vector<int> out;
@@ -1583,8 +1723,10 @@ std::vector<int> Runner::generate(const std::vector<int>& prompt, const GenParam
   // make the sampler disagree with the draft comparison.
   if (mtp_ready_ && p.temperature <= 0.0f && p.rep_penalty == 1.0f && p.min_p <= 0.0f)
     return generate_mtp(prompt, p, on_token);
-  reset();
-  prefill(prompt);
+  if (prompt.empty()) return {};
+  const int start = prefix_begin(prompt);
+  if (start < (int)prompt.size())
+    prefill(std::vector<int>(prompt.begin() + start, prompt.end()));
   std::vector<int> out;
   Sampler smp;
   smp.reset(p.seed ? p.seed : 1234);

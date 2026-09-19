@@ -137,6 +137,43 @@ int main(int argc, char** argv) {
     float e = relerr(got, ref);
     printf("kpool_write relerr %.2e %s\n", e, e < 2e-3 ? "PASS" : "FAIL"); fails += e >= 2e-3;
 
+    // A pool belongs to whichever call writes its LAST member, so the same tokens split across calls
+    // - a chunk boundary, or a prefix-cache resume - must produce identical keys. Requiring all four
+    // members to fall inside one call meant the decode path (one token per call) never wrote a pool
+    // at all, while the indexer's visibility rule still exposed it.
+    {
+      const int n_tok = 16, npool_used = n_tok / POOL;
+      std::vector<half> base(np * 128), by4(np * 128), by1(np * 128);
+      CK(cudaMemset(draw, 0, tmax * 256 * 2)); CK(cudaMemset(dpk, 0, np * 128 * 2));
+      kpool_write(dik, dig, draw, dpk, dape, 0, n_tok, np, 0); CK(cudaDeviceSynchronize());
+      CK(cudaMemcpy(base.data(), dpk, base.size() * 2, cudaMemcpyDeviceToHost));
+      CK(cudaMemset(draw, 0, tmax * 256 * 2)); CK(cudaMemset(dpk, 0, np * 128 * 2));
+      for (int i = 0; i < n_tok; i += POOL)
+        kpool_write(dik + (size_t)i * 128, dig + (size_t)i * 128, draw, dpk, dape, i, POOL, np, 0);
+      CK(cudaDeviceSynchronize());
+      CK(cudaMemcpy(by4.data(), dpk, by4.size() * 2, cudaMemcpyDeviceToHost));
+      CK(cudaMemset(draw, 0, tmax * 256 * 2)); CK(cudaMemset(dpk, 0, np * 128 * 2));
+      for (int i = 0; i < n_tok; i++)
+        kpool_write(dik + (size_t)i * 128, dig + (size_t)i * 128, draw, dpk, dape, i, 1, np, 0);
+      CK(cudaDeviceSynchronize());
+      CK(cudaMemcpy(by1.data(), dpk, by1.size() * 2, cudaMemcpyDeviceToHost));
+      int d4 = 0, d1 = 0, unwritten = 0;
+      for (int p = 0; p < npool_used; p++) for (int c = 0; c < 128; c++) {
+        half a = base[(size_t)c * np + p];
+        if (a != by4[(size_t)c * np + p]) d4++;
+        if (a != by1[(size_t)c * np + p]) d1++;
+        if (a == __float2half(0.0f)) unwritten++;
+      }
+      const int total = npool_used * 128;
+      printf("kpool_write split invariance: %d/%d differ (4-token calls), %d/%d (1-token calls), "
+             "%d unwritten %s\n", d4, total, d1, total, unwritten,
+             (d4 == 0 && d1 == 0 && unwritten == 0) ? "PASS" : "FAIL");
+      fails += !(d4 == 0 && d1 == 0 && unwritten == 0);
+      // Rebuild the whole plane: the indexer_score case below reads all np pools of this fixture.
+      CK(cudaMemset(draw, 0, tmax * 256 * 2)); CK(cudaMemset(dpk, 0, np * 128 * 2));
+      kpool_write(dik, dig, draw, dpk, dape, 0, np * POOL, np, 0); CK(cudaDeviceSynchronize());
+    }
+
     // indexer_score: m=2, positions 255 and 100
     int m = 2;
     std::vector<float> qi(m * 32 * 128), w(m * 32);

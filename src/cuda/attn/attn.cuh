@@ -75,7 +75,8 @@ void pool_expand_row(
 // Write raw idx plane [k||gate] 256/token and complete pool keys:
 //   pool_k[p,c] = 0.25 * sum_i softmax_c(gate[p*4+i] + APE[i]) * k[p*4+i]
 // softmax over the 4 members channelwise. Called after tokens are appended; n_new tokens
-// starting at pos_start (aligned handling: pools complete only when all 4 members written).
+// starting at pos_start. A pool is written by whichever call writes its LAST member, using the raw
+// rows of its earlier members, which are still in the plane (same sequence, position-addressed).
 void kpool_write(
     const half* idx_k,    // [n_new, 128] conv'd indexer keys
     const half* idx_g,    // [n_new, 128] indexer gates

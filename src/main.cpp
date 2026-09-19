@@ -80,6 +80,12 @@ int main(int argc, char** argv) {
     int default_max_tokens = getenv("HELIOS_MAX_TOKENS") ? atoi(getenv("HELIOS_MAX_TOKENS")) : 0;
     // Default reasoning effort (low|high|max) for requests that do not send one.
     std::string reasoning_effort = getenv("HELIOS_REASONING_EFFORT") ? getenv("HELIOS_REASONING_EFFORT") : "";
+    // Cross-request prefix cache: pinned host budget for KDA-state snapshots and the token interval
+    // between them. Snapshots are what let a request that diverges from the resident history resume
+    // near its divergence point instead of from zero; extension requests need none. 4 GB holds 28
+    // snapshots, which at the default interval covers ~229k tokens - essentially the whole context.
+    long long prefix_snap_mb = getenv("HELIOS_PREFIX_SNAP_MB") ? atoll(getenv("HELIOS_PREFIX_SNAP_MB")) : 4096;
+    int prefix_interval = getenv("HELIOS_PREFIX_INTERVAL") ? atoi(getenv("HELIOS_PREFIX_INTERVAL")) : 8192;
     const char* host = "127.0.0.1";
     std::string api_key;
     bool ram_only = false;
@@ -96,6 +102,8 @@ int main(int argc, char** argv) {
       else if (a == "--api-key" && i + 1 < argc) api_key = argv[++i];
       else if (a == "--max-tokens" && i + 1 < argc) default_max_tokens = atoi(argv[++i]);
       else if (a == "--reasoning-effort" && i + 1 < argc) reasoning_effort = argv[++i];
+      else if (a == "--prefix-snap-mb" && i + 1 < argc) prefix_snap_mb = atoll(argv[++i]);
+      else if (a == "--prefix-interval" && i + 1 < argc) prefix_interval = atoi(argv[++i]);
       else if (a == "--chunk" && i + 1 < argc) max_chunk = atoi(argv[++i]);
       else if (a == "--tokens" && i + 1 < argc) max_tokens = atoi(argv[++i]);
       else if (a == "--temp" && i + 1 < argc) temperature = atof(argv[++i]);
@@ -143,6 +151,8 @@ int main(int argc, char** argv) {
       if (!slots.init(m, pool_bytes)) return 6;
     }
     Runner runner;
+    runner.prefix_config((size_t)(prefix_snap_mb > 0 ? prefix_snap_mb : 0) * 1024 * 1024,
+                         prefix_interval);
     if (!runner.init(m, cache, slots, &tk, max_chunk)) return 7;
     {
       size_t f0 = 0, t0 = 0, f1 = 0, t1 = 0;
@@ -171,6 +181,8 @@ int main(int argc, char** argv) {
              out.size(), dt, dt > 0 ? out.size() / dt : 0.0,
              runner.timings().prefill_ms > 0 ? runner.timings().prefill_tokens * 1000.0 / runner.timings().prefill_ms : 0.0,
              runner.timings().decode_ms > 0 ? runner.timings().decode_tokens * 1000.0 / runner.timings().decode_ms : 0.0);
+      printf("[prefix] requests=%lld reused=%lld tokens, last request resumed at %d\n",
+             runner.prefix_requests(), runner.prefix_reuse_total(), runner.prefix_resume());
       slots.print_stats();
       slots.print_skew();
       return 0;

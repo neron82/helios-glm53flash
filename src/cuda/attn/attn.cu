@@ -351,7 +351,13 @@ __global__ void kpool_write_k(const half* __restrict__ ik, const half* __restric
       raw[(size_t)pos * 256 + 128 + c] = ig[src * 128 + c];
     }
   }
-  if (t0 < pos_start || t0 + POOL - 1 >= pos_start + n_new) return;   // not completed
+  // The group is computable as soon as its LAST token has been written, even if its first tokens came
+  // from an earlier call: the raw rows above are position-addressed and still hold them (they are the
+  // same sequence - a chunk boundary or a prefix-cache resume). Requiring the whole group to be inside
+  // this call meant that every pool completed during decode (one token per call) was never written at
+  // all, while the indexer's visibility rule (`p*POOL + POOL - 1 <= q_pos`) still exposed it - so a
+  // query read an unwritten pool row for every 4 generated tokens.
+  if (t0 + POOL - 1 >= pos_start + n_new) return;   // group not completed yet
   float g[POOL], k[POOL];
   float mx = -1e30f;
   #pragma unroll

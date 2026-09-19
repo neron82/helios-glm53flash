@@ -41,6 +41,10 @@ target_link_libraries(helios PRIVATE CUDA::cudart CUDA::cuda_driver Threads::Thr
 add_executable(helios_utf8_test test/test_utf8.cpp)
 target_include_directories(helios_utf8_test PRIVATE src)
 
+# Pure policy test: no CUDA, no model, so it runs anywhere and pins the reuse decision itself.
+add_executable(helios_prefix_test src/engine/test_prefix.cpp)
+target_include_directories(helios_prefix_test PRIVATE src)
+
 add_executable(helios_chat_test src/core/test_chat.cpp src/core/chat.cpp src/tokenizer/tokenizer.cpp)
 target_include_directories(helios_chat_test PRIVATE src third_party)
 target_link_libraries(helios_chat_test PRIVATE Threads::Threads)

@@ -79,6 +79,13 @@ The essential trick is **placement by link speed**: the trunk (which must talk t
 layer) goes on the slow card, and the expert pool (which receives 6 MB slabs and returns activations)
 goes on the fast card. The only traffic across the slow link is one hidden-state hop per MoE layer.
 
+The KV cache is **position-addressed and survives across requests**, which is what makes prefix
+reuse nearly free: a new prompt that continues the resident history resumes where it left off without
+touching the cache. The one state that is *not* position-addressed is the KDA recurrence — a conv
+window plus a recurrent matrix per KDA layer — so the engine keeps a ring of those in pinned host
+memory (142 MB each) and restores the newest one at or below the point where a new prompt diverges.
+Snapshots live in host RAM rather than VRAM because VRAM is what context length competes for.
+
 **Expert residency is the decode bottleneck**, and it is managed by a persistent census rather than
 an in-process heuristic. The engine records per-`(layer, expert)` request counts in a
 `.helios.census` file next to the model, ranks the pool by that long-run census, and pins the top
@@ -91,6 +98,8 @@ per chunk against a 120-token decode's ~41k. Switching to the census took reside
 
 - **262k context** on 2× 24 GB, via absorbed MLA latents (a 512-wide fp16 latent instead of the
   unabsorbed per-head K+V, ~72× smaller) plus fixed-size KDA recurrent state.
+- **Cross-request prefix caching**: a request that continues or re-sends a conversation reuses the
+  resident KV instead of prefilling from token 0 (measured 9–34× faster on 15–21k-token prompts).
 - **Tiered expert streaming** from a 73 GB pinned RAM arena into an 18 GB VRAM slot pool, with
   pinned-memory double buffering and per-slot completion events.
 - **Persistent expert ranking** (`.helios.census`) that survives restarts and re-tunes itself to the
@@ -169,6 +178,8 @@ reaping and a wait for the previous instance's VRAM to be released:
 | `--tokens N` | 64 | generation length for `gen` |
 | `--temp T` | 0.7 | sampling temperature; `0` is greedy and is the only mode MTP engages in |
 | `--prompt S` / `--prompt-file F` | — | prompt text for `gen` |
+| `--prefix-snap-mb N` | 4096 | pinned host budget for prefix-cache KDA snapshots (142 MB each); `0` disables them and leaves extension-only reuse |
+| `--prefix-interval N` | 8192 | tokens between snapshots; smaller means less recompute after a divergence, larger means more history is reusable |
 | `--ram-only` | off | load weights into the arena without touching the GPUs |
 
 ### Environment
@@ -183,6 +194,9 @@ reaping and a wait for the previous instance's VRAM to be released:
 | `HELIOS_NO_PIN` | off | do not pin the RAM arena (for low-RAM hosts; costs streaming bandwidth) |
 | `HELIOS_MAX_TOKENS` | 32768 | same as `--max-tokens` |
 | `HELIOS_REASONING_EFFORT` | **high** | same as `--reasoning-effort` |
+| `HELIOS_PREFIX_SNAP_MB` | 4096 | same as `--prefix-snap-mb` |
+| `HELIOS_PREFIX_INTERVAL` | 8192 | same as `--prefix-interval` |
+| `HELIOS_PREFIX_DEBUG` | off | log the reuse decision (common prefix, mode, resume position) per request |
 | `HELIOS_PROF` | off | per-stage timing accumulators, printed at exit |
 | `HELIOS_LAYER_MAJOR` | off | alternative layer-major prefill (see Limitations) |
 
@@ -213,6 +227,43 @@ The reasoning is returned separately as `reasoning_content`, so clients that dis
 show it and clients that do not can ignore it. `thinking: false` (or
 `chat_template_kwargs.enable_thinking: false`) instead renders an immediately-closed think block, so
 the model answers directly rather than reasoning first.
+
+## Cross-request prefix caching
+
+The KV, indexer and pool planes are position-addressed, so they are never cleared between requests
+and a new prompt can simply resume inside them. `Runner::prefix_plan` (a pure function, tested
+exhaustively in `src/engine/test_prefix.cpp`) compares the incoming prompt with the resident token
+history and picks one of three modes:
+
+| mode | when | cost |
+|---|---|---|
+| **extension** | the prompt continues the resident history | nothing: the planes and the KDA state already hold the prefix |
+| **snapshot** | the prompt diverges, and a snapshot exists at or below the divergence | restore 142 MB (≈50 ms over the x4 link), then recompute from the snapshot |
+| **restart** | the prompt shares too little history, or no snapshot is old enough | a normal full prefill |
+
+The last token of the prompt is always re-run, because the caller samples from it; that also
+guarantees at least one row through the model even when the whole prompt is already resident.
+
+Measured through the server on a 15k-token document with a passphrase planted at the very start
+(retrieval from the *reused* region is the correctness signal — a prefix cache that served the wrong
+rows could not answer from it):
+
+| request | prompt tokens | wall | speedup | mode |
+|---|---|---|---|---|
+| cold prefill | 14,960 | 44.3 s | — | restart |
+| re-sent identically | 14,960 | **1.3 s** | **33.6×** | snapshot (one token re-run) |
+| next chat turn | 14,994 | **4.8 s** | **9.2×** | extension (zero recompute) |
+| diverges mid-history | 13,473 | 18.0 s | 2.2× | snapshot at 8192, then 5.3k recomputed |
+
+All four answer the passphrase correctly. An earlier run at 21k tokens gave the same shape:
+61.7 s cold → **1.3 s re-sent (46.9×)** → 4.7 s for the next chat turn. The engine also logs the
+decision under `HELIOS_PREFIX_DEBUG`, and `/metrics` reports `prefix_reused_tokens`.
+
+Two things to know when measuring it: a client that renders its history differently from the previous
+turn (for example one that drops the reasoning text of an earlier assistant turn) makes the prompts
+diverge inside that turn, which costs one snapshot interval of recompute rather than nothing; and
+because the engine holds a single sequence, a *different* conversation cannot reuse anything and
+starts cold.
 
 ## Measured performance
 
@@ -252,6 +303,7 @@ Two of those are worth calling out because they framed the whole optimisation ef
 
 | change | effect |
 |---|---|
+| Cross-request prefix caching | re-sent prompt **33.6×** faster, next chat turn **9.2×**, cold prefill unchanged |
 | Persistent census for expert residency | decode **+41%**, expert PCIe traffic −32% |
 | Tensor-core indexer for pooled selection | 10.5× at long context |
 | Tiled fp16 GEMMs for the absorbed projections | removed ~650 ms per 8192-token chunk |
@@ -269,9 +321,15 @@ looked like a 50% host-side stall but was a units error between chunks of differ
 - **Generation stops at the KV capacity rather than wrapping.** Hitting it is a `length` stop, not an
   error, and the server stays up - but the client must read `finish_reason` to tell a truncation from
   a natural end.
-- **No cross-request prefix caching.** Every request prefills from token 0. A 20k-token prompt costs
-  ~60 s at 346 tok/s, so a chat client that re-sends its history will feel slow on long
-  conversations. This is the most impactful unimplemented optimisation.
+- **Prefix reuse is one conversation deep.** The engine holds a single sequence, so the *latest*
+  request's history is the one that can be reused; a concurrent request for a different conversation
+  starts cold and (unless it is served after the other one finishes) replaces the resident history.
+  Within one conversation, a re-sent or extended prompt reuses everything up to the point where the
+  prompts diverge.
+- **Reuse after a mid-history divergence costs one snapshot interval.** Snapshots are 8192 tokens
+  apart by default, so a prompt that diverges 5k tokens back recomputes up to 8k tokens; raise
+  `--prefix-interval` (less recompute, less history covered per snapshot budget) or lower it as
+  needed. Setting `--prefix-snap-mb 0` disables snapshots entirely and leaves extension-only reuse.
 - **Single sequence.** Concurrent requests queue rather than batch, so throughput does not improve
   with parallel clients. Correctness is unaffected.
 - **Not bit-reproducible run to run.** Two identical greedy runs diverge around token 10, almost
