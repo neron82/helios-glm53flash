@@ -1,0 +1,41 @@
+MIT License
+
+Copyright (c) 2026 Vibing Neron
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+This license covers the source code in this repository only.
+
+It does NOT cover the model weights. The EXL3 checkpoint this engine loads
+(GLM-5.3-Flash-exl3) is a separate download under its own license; see
+the model's repository for that.
+
+Third-party code vendored or ported into this repository keeps its original
+license and copyright notice:
+
+  - The EXL3 quantization core under src/cuda/quant/ is a port of exllamav3
+    (https://github.com/turboderp-org/exllamav3), MIT License,
+    Copyright (c) 2025 Turboderp. See src/cuda/quant/README_PORT.md and
+    third_party/LICENSE-exllamav3.
+  - third_party/httplib.h is cpp-httplib, MIT License,
+    Copyright (c) 2017 yhirose. See third_party/LICENSE-httplib.
+  - third_party/json.hpp is nlohmann/json, MIT License,
+    Copyright (c) 2013-2025 Niels Lohmann. See third_party/LICENSE.MIT.

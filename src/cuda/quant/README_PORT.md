@@ -6,6 +6,35 @@ only torch-dependent launcher wrappers, autotuning, and graph-capture
 infrastructure have been replaced with raw-pointer C++ APIs and explicit
 stream parameters.
 
+## Upstream license
+
+This is a derivative work and remains under the upstream project's license:
+
+    exllamav3 - https://github.com/turboderp-org/exllamav3
+    MIT License
+    Copyright (c) 2025 Turboderp
+
+    Permission is hereby granted, free of charge, to any person obtaining a copy
+    of this software and associated documentation files (the "Software"), to deal
+    in the Software without restriction, including without limitation the rights
+    to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+    copies of the Software, and to permit persons to whom the Software is
+    furnished to do so, subject to the following conditions:
+
+    The above copyright notice and this permission notice shall be included in all
+    copies or substantial portions of the Software.
+
+    THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+    IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+    FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+    AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+    LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+    OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+    SOFTWARE.
+
+The full text is also at `third_party/LICENSE-exllamav3`.
+
+
 ## File Mapping
 
 | Original (exllamav3_ext) | Ported (helios/src/cuda/quant) | Notes |
