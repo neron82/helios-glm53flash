@@ -19,23 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
----
-
-This license covers the source code in this repository only.
-
-It does NOT cover the model weights. The EXL3 checkpoint this engine loads
-(GLM-5.3-Flash-exl3) is a separate download under its own license; see
-the model's repository for that.
-
-Third-party code vendored or ported into this repository keeps its original
-license and copyright notice:
-
-  - The EXL3 quantization core under src/cuda/quant/ is a port of exllamav3
-    (https://github.com/turboderp-org/exllamav3), MIT License,
-    Copyright (c) 2025 Turboderp. See src/cuda/quant/README_PORT.md and
-    third_party/LICENSE-exllamav3.
-  - third_party/httplib.h is cpp-httplib, MIT License,
-    Copyright (c) 2017 yhirose. See third_party/LICENSE-httplib.
-  - third_party/json.hpp is nlohmann/json, MIT License,
-    Copyright (c) 2013-2025 Niels Lohmann. See third_party/LICENSE.MIT.

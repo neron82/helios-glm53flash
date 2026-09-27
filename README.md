@@ -448,17 +448,16 @@ weights.** GLM-5.3-Flash-exl3 is a separate download under its own license; see 
 repository for that.
 
 Third-party code vendored or ported in keeps its original license and copyright notice — the MIT
-terms require those notices to travel with the code:
+terms require those notices to travel with the code. They are collected in
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md), which covers:
 
-| component | license | notice |
-|---|---|---|
-| EXL3 quantization core under `src/cuda/quant/` — a port of [exllamav3](https://github.com/turboderp-org/exllamav3) | MIT, © 2025 Turboderp | [`third_party/LICENSE-exllamav3`](third_party/LICENSE-exllamav3), and `src/cuda/quant/README_PORT.md` |
-| `third_party/httplib.h` — cpp-httplib | MIT, © 2017 yhirose | [`third_party/LICENSE-httplib`](third_party/LICENSE-httplib) |
-| `third_party/json.hpp` — nlohmann/json | MIT, © 2013-2025 Niels Lohmann | [`third_party/LICENSE.MIT`](third_party/LICENSE.MIT) |
-
-The EXL3 port is worth calling out: the kernel bodies are byte-exact from upstream, so it is a
-derivative work and MIT obliges this repository to reproduce turboderp's notice — which is why
-`LICENSE`, `third_party/LICENSE-exllamav3` and the port map all carry it.
+- the **EXL3 quantization core** under `src/cuda/quant/`, a port of
+  [exllamav3](https://github.com/turboderp-org/exllamav3) (MIT, © 2025 Turboderp) whose **kernel
+  bodies are byte-exact from upstream** — a derivative work, which is why turboderp's notice is
+  reproduced in `third_party/LICENSE-exllamav3` and at the top of
+  `src/cuda/quant/README_PORT.md`;
+- `third_party/httplib.h`, cpp-httplib (MIT, © 2017 yhirose);
+- `third_party/json.hpp`, nlohmann/json (MIT, © 2013-2025 Niels Lohmann).
 
 The sibling engine for Qwen3.8-Flash-Next,
 [helios-qwen38next](https://github.com/neron82/helios-qwen38next), is MIT under the same terms.
