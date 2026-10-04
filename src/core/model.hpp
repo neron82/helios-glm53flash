@@ -8,6 +8,7 @@
 #include <cuda_runtime.h>
 #include <cuda_fp16.h>
 #include "core/safetensors.hpp"
+#include "core/expert_layout.hpp"
 
 namespace helios {
 
@@ -35,9 +36,9 @@ struct Config {
   int mtp_layer = 45;             // tensor namespace index for the MTP draft layer
 };
 
-// One EXL3 quantized matrix: W[out,in] at K bits (K = trellis.d2*16/... see dims()).
+// One EXL3 quantized matrix: W[out,in] at K bits (trellis third dimension / 16).
 struct Group {
-  void* trellis = nullptr;        // device i16 [d0,d1,K/16]
+  void* trellis = nullptr;        // device i16 [in/16,out/16,16*K]
   const half* suh = nullptr;      // device f16 [in]
   const half* svh = nullptr;      // device f16 [out]
   int mul1 = 0;                   // codebook multiplier word (host value)
@@ -108,7 +109,7 @@ struct Layer {
 
 struct MTPWeights {
   MLAWeights mla; IndexerWeights idx; MoeWeights moe_w;
-  Group eh_proj;                    // [4096, 8192] 4-bit: cat(hnorm(embed), enorm(trunk_h)) -> 4096
+  Group eh_proj;                    // [4096, 8192]: cat(hnorm(embed), enorm(trunk_h)) -> 4096
   const half* enorm = nullptr, *hnorm = nullptr, *shared_head_norm = nullptr;
   // The MTP block is a PLAIN residual block (no mHC), unlike trunk layers 0..44, so it carries the
   // usual pre-attn / pre-ffn RMSNorms.
@@ -117,35 +118,35 @@ struct MTPWeights {
 };
 
 struct Model {
+  std::string directory;
   Config cfg;
   ShardSet shards;
 
   // ---- GPU0 (trunk) ----
   const void* embed = nullptr;          // bf16 [vocab,4096] (gather kernel converts)
   const half* final_norm = nullptr;     // [4096]
-  Group lm_head;                        // 5-bit [vocab,4096]
+  Group lm_head;                        // quantized [vocab,4096], bits read from checkpoint
   std::vector<Layer> layers;            // 0..44
   MTPWeights mtp;
 
   // ---- GPU1 (streaming) ----
   void* slot_pool = nullptr;            // n_slots * stride expert slot region
   int n_slots = 0;
-  size_t slot_stride = 0;               // bytes per expert slab (fixed by dims)
+  size_t slot_stride = 0;               // maximum trunk expert slab size
 
   // ---- RAM arena ----
   char* arena = nullptr;                // sparse-layers (incl MTP) expert slabs, contiguous
   int arena_layers = 0;                 // 43 = layers 3..44 + MTP
-  // slab(layer, e) = arena + (arena_slot_base[layer] + e) * slot_stride
-  std::vector<int> arena_slot_base;     // per tensor-namespace layer -> slot base (or -1)
-  std::vector<size_t> slab_off;         // 12 piece byte offsets within one expert slab:
-                                        // [0..3] gate t/suh/svh/mul1, [4..7] up, [8..11] down
+  std::vector<int> arena_slot_base;     // logical expert index, or -1 for dense layers
+  std::vector<size_t> arena_byte_base;  // compact RAM byte offset per layer
+  std::vector<ExpertLayout> expert_layouts; // per-layer offsets, sizes and projection bits
 
   // Stats
   size_t gpu0_bytes = 0, gpu1_bytes = 0, ram_bytes = 0;
 
   bool load(const std::string& dir, bool ram_only, bool verbose);
   const char* slab(int layer, int expert) const {
-    return arena + (size_t)(arena_slot_base[layer] + expert) * slot_stride;
+    return arena + arena_byte_base.at(layer) + (size_t)expert * expert_layouts.at(layer).stride;
   }
 };
 

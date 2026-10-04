@@ -1,9 +1,9 @@
 # Helios — a GLM-5.3-Flash inference engine for 2× RTX 3090
 
-A from-scratch C++20/CUDA inference engine for **GLM-5.3-Flash in EXL3 format (2.05 bpw)**, written
-for a two-card workstation where the model does not fit in VRAM. No PyTorch, no Python, no
-inference framework: the forward pass, the quantization kernels, the KV cache, the tiered expert
-streaming and the HTTP server are all in this repository.
+A from-scratch C++23/CUDA inference engine for **GLM-5.3-Flash in EXL3 format (both local quants)**, written
+for a two-card workstation where the model does not fit in VRAM. The native text path needs no Python or inference framework: the forward pass, the quantization kernels, the KV cache, the tiered expert
+streaming and the HTTP server are all in this repository. Image input on the larger quant uses an
+optional Python/PyTorch vision frontend, then the same native language forward pass.
 
 The target is the awkward case that generic runtimes handle badly: **3.4 TB/s vs 25 GB/s asymmetric
 PCIe links, no NVLink, and a 85 GB model against 48 GB of VRAM.** The engine is built around that
@@ -55,6 +55,24 @@ Roughly half the layers are linear-attention and half are MLA, which is why the 
 completely separate attention paths and a hybrid KV cache (per-position latents for MLA, a fixed
 recurrent state for KDA).
 
+## Supported checkpoints
+
+| Local checkpoint | Stored expert layouts | Output head | Expert arena | Largest trunk GPU slot |
+|---|---|---|---|---|
+| `~/models/glm53flash` | 42 trunk layers at 2 bits; MTP at 2 bits | 5 bits | 72.990 GiB | 6.035 MiB |
+| `~/models/glm53flash_abl` | 22 trunk layers at 2 bits, 20 at 3 bits; MTP at 4 bits | 6 bits | 91.552 GiB | 9.035 MiB |
+
+The second checkpoint was described locally as **3.05 bpw**, but its own
+`quantization_config.json` identifies it as **2.51 bpw**. The loader uses actual tensor shapes and
+codebook metadata rather than either label. It validates each expert projection before allocating,
+keeps a compact host arena per layer, and copies only that layer's actual slab size into the GPU
+pool. MTP is excluded from the trunk slot capacity. This keeps both checkpoints usable with 128 GB
+RAM; padding the entire new arena to the 4-bit MTP slab would exceed that budget.
+
+The architecture table and historical long-context measurements describe the original checkpoint.
+Use the comparison below for the new quant. Contexts beyond 8192 tokens have not been revalidated
+on the second quant.
+
 ## Design
 
 ```mermaid
@@ -102,7 +120,7 @@ per chunk against a 120-token decode's ~41k. Switching to the census took reside
   throughput (a 97k-token prompt still prefills at 349.9 tok/s) — see "KV, context and VRAM" below.
 - **Cross-request prefix caching**: a request that continues or re-sends a conversation reuses the
   resident KV instead of prefilling from token 0 (measured 9–34× faster on 15–21k-token prompts).
-- **Tiered expert streaming** from a 73 GB pinned RAM arena into an 18 GB VRAM slot pool, with
+- **Tiered expert streaming** from a 73–92 GiB pinned RAM arena into an 18 GB VRAM slot pool, with
   pinned-memory double buffering and per-slot completion events.
 - **Persistent expert ranking** (`.helios.census`) that survives restarts and re-tunes itself to the
   workload it is actually serving.
@@ -112,7 +130,7 @@ per chunk against a 120-token decode's ~41k. Switching to the census took reside
   indexer with tensor-core scoring, the KDA recurrence, the mHC mixing/Sinkhorn path, and tiled fp16
   GEMMs for the absorbed projections — each with a parity test against a CPU reference.
 - **L2 persistence** requested on both cards, GPU ordering chosen from measured PCIe bandwidth, and
-  a build that needs nothing but CUDA, a C++20 compiler and CMake.
+  a build that needs nothing but CUDA, a C++23 compiler and CMake.
 
 ## Building
 
@@ -121,9 +139,9 @@ cmake -B build -G Ninja
 cmake --build build
 ```
 
-Requirements: CUDA toolkit (13.0 used here), a C++20 host compiler, CMake ≥ 3.24, Ninja, and a CPU
+Requirements: CUDA toolkit (13.0 used here), a C++23 host compiler, CMake ≥ 3.24, Ninja, and a CPU
 with AVX2 — the build targets `x86-64-v3` (Haswell or newer). Kernels are compiled for `sm_86`, so an
-RTX 3090-class card is assumed. The only third-party code is vendored: `httplib.h` and
+RTX 3090-class card is assumed. The native build's third-party code is vendored: `httplib.h` and
 `nlohmann/json.hpp`.
 
 The kernel libraries under `src/cuda/` are standalone CMake projects (each with its own parity test);
@@ -152,14 +170,14 @@ The engine expects a standard EXL3 checkpoint directory: shards plus `model.safe
                      --cap 262144 --chunk 8192
 ```
 
-`scripts/helios_server.sh` wraps the server with `start | stop | restart | status`, a PID+start-time
+`scripts/helios_glm53_server.sh` wraps the server with `start | stop | restart | status`, a PID+start-time
 record, a lock against concurrent invocations, a port-in-use check, a readiness probe, stray-process
 reaping and a wait for the previous instance's VRAM to be released:
 
 ```bash
-./scripts/helios_server.sh start          # binds 0.0.0.0:8080
-./scripts/helios_server.sh status
-./scripts/helios_server.sh stop
+./scripts/helios_glm53_server.sh start          # binds 0.0.0.0:8080
+./scripts/helios_glm53_server.sh status
+./scripts/helios_glm53_server.sh stop
 ```
 
 It starts with the settings this engine is meant to be used with, so nothing has to be passed
@@ -167,11 +185,45 @@ explicitly: **`--cap 524288`** (512k tokens of KV; the cache is allocated up fro
 able to hold it — the script waits for that and says so rather than aborting inside the allocator) and
 **cross-request prefix caching on** (`--prefix-snap-mb 4096 --prefix-interval 8192`; snapshots live in
 pinned host memory, so this costs no VRAM). Every value stays overridable from the environment:
-`CAP`, `CHUNK`, `PREFIX_SNAP_MB`, `PREFIX_INTERVAL`, `REASONING_EFFORT`, `GPU0_NEED_MIB`, `MIN_FREE_MIB`.
+`MODEL_DIR`, `CAP`, `CHUNK`, `PREFIX_SNAP_MB`, `PREFIX_INTERVAL`, `REASONING_EFFORT`, `GPU0_NEED_MIB`, `MIN_FREE_MIB`.
 
 Measured on that configuration: a 26,622-token prompt prefills in 77.6 s (343 tok/s) and the *same*
 prompt re-sent answers in **1.4 s (53.6×)** with the retrieval intact — the engine resumes at token
 26620 of 26622.
+
+### Larger quant and image input
+
+```bash
+MODEL_DIR="$HOME/models/glm53flash_abl" ./scripts/helios_glm53_server.sh start
+# Or start a smaller-context server directly:
+HELIOS_VISION_PYTHON="$HOME/shared-venv-gpu/bin/python" \
+  ./build/helios serve "$HOME/models/glm53flash_abl" --cap 16384 --chunk 2048
+```
+
+For images, install the packages in `requirements-vision.txt`: `torch`, `transformers` with `Glm5NextVisionModel` (5.16.1 was tested),
+`safetensors`, `numpy`, and `Pillow` in the interpreter selected by `HELIOS_VISION_PYTHON`
+(default: `python3`). Text-only requests need none of these packages. The helper loads only the
+BF16 vision tower on the slow-link GPU and releases it before native generation. It preserves
+aspect ratio, pads to patch alignment, applies the checkpoint's normalization and inserts the
+resulting embeddings at image-token positions. Reserve GPU0 headroom for the vision tower;
+the smaller-context image example above was validated at cap 16384 and chunk 2048.
+Image requests reset prefix reuse because identical
+placeholder tokens can represent different pixels.
+
+Send `/v1/chat/completions` a content array such as:
+
+```json
+{"model":"helios","thinking":false,"messages":[{"role":"user","content":[
+  {"type":"text","text":"Describe this image."},
+  {"type":"image_url","image_url":{"url":"data:image/png;base64,..."}}
+]}],"max_tokens":256}
+```
+
+Multiple still images are supported. Image URLs must contain base64 data (up to 24 MiB encoded);
+remote URLs, videos and the original checkpoint's EXL3-quantized vision tower are rejected with a
+clear error. The image path currently starts a vision helper for every image, so its setup latency
+is separate from text inference throughput. Check it with `test/generation_smoke.py` against a
+running larger-quant server.
 
 ## Parameters
 
@@ -189,6 +241,9 @@ prompt re-sent answers in **1.4 s (53.6×)** with the retrieval intact — the e
 | `--tokens N` | 64 | generation length for `gen` |
 | `--temp T` | 0.7 | sampling temperature; `0` is greedy |
 | `--prompt S` / `--prompt-file F` | — | prompt text for `gen` |
+| `--prompt-ids F` | — | JSON token-ID array for exact-length benchmark prompts |
+| `--ignore-eos` | off | force the requested generation length for throughput measurements |
+| `--census-file F` | checkpoint's `.helios.census` | override expert census persistence; an empty value disables it |
 | `--prefix-snap-mb N` | 4096 | pinned host budget for prefix-cache KDA snapshots (142 MB each); `0` disables them and leaves extension-only reuse |
 | `--prefix-interval N` | 8192 | tokens between snapshots; smaller means less recompute after a divergence, larger means more history is reusable |
 | `--ram-only` | off | load weights into the arena without touching the GPUs |
@@ -200,6 +255,7 @@ prompt re-sent answers in **1.4 s (53.6×)** with the retrieval intact — the e
 | `HELIOS_SLOTS` | auto | expert pool size in slots; auto is `(free VRAM − 4 GiB) / slab size` |
 | `HELIOS_GPU_ORDER` | auto | `trunk,slots` physical GPU indices, overriding the PCIe-bandwidth ranking |
 | `HELIOS_NO_PIN` | off | do not pin the RAM arena (for low-RAM hosts; costs streaming bandwidth) |
+| `HELIOS_VISION_PYTHON` | `python3` | interpreter for the optional BF16 image encoder |
 | `HELIOS_MAX_TOKENS` | 32768 | same as `--max-tokens` |
 | `HELIOS_REASONING_EFFORT` | **high** | same as `--reasoning-effort` |
 | `HELIOS_PREFIX_SNAP_MB` | 4096 | same as `--prefix-snap-mb` |
@@ -276,6 +332,38 @@ because the engine holds a single sequence, a *different* conversation cannot re
 starts cold.
 
 ## Measured performance
+
+### Mixed-quant comparison — 2026-10-04
+
+Pre-push validation: one cold request per cell, identical exact token-ID prompts,
+`--cap 16384 --chunk 8192 --prefix-snap-mb 0`, greedy generation, no saved census.
+`--ignore-eos` forces the requested output count for timing; normal EOS-respecting
+text and image requests were tested separately. Load/pin time is excluded. Decode
+counts 255 or 511 forward steps for 256 or 512 emitted tokens because prefill
+already supplies the first token's logits.
+
+| Prefill | Generated | Original prefill tok/s | Original decode tok/s | Larger prefill tok/s | Larger decode tok/s |
+|---|---|---|---|---|---|
+| 4096 | 256 | 313.5 | 16.39 | 303.2 | 12.36 |
+| 4096 | 512 | 312.9 | 15.95 | 303.0 | 12.33 |
+| 8192 | 256 | 347.1 | 15.78 | 344.8 | 12.19 |
+| 8192 | 512 | 348.8 | 16.06 | 344.4 | 11.92 |
+
+The larger checkpoint is 0.7–3.3% slower in prefill and 22.7–25.8% slower in decode
+on this grid. Its arena holds 25.4% more expert data and the same GPU pool fits
+2034 slots rather than 3051. Text generation, SSE, color recognition, non-square
+images, ordered multiple images, OCR, changing-image cache invalidation and text
+after images all passed. Both quant loaders report zero mismatches in 256 RAM
+samples and 507 device tensors. All six CTest suites and the aux/attention parity
+executables pass; tokenizer vectors pass 28/28 and chat parity 4/4 for each quant.
+
+Raw measurements: [pre-push JSON](bench/results/prepush-2026-10-04.json).
+A final sweep on the fresh checkout follows consolidation; these initial results
+establish the acceptance condition for publishing the adaptation.
+
+```bash
+~/shared-venv-gpu/bin/python bench/quant_sweep.py --repeats 3 --output /tmp/helios-quant-sweep
+```
 
 **End to end.** Both rows are the same build on the reference system:
 

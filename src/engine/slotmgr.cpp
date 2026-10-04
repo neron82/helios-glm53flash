@@ -239,16 +239,21 @@ int SlotMgr::evict_one() {
 
 void SlotMgr::start_copy(int slot, int layer, int expert) {
   const char* src = m_->slab(layer, expert);
+  const size_t bytes = m_->expert_layouts.at(layer).stride;
+  if (bytes > stride_) {
+    fprintf(stderr, "[slots] L%d slab exceeds trunk slot capacity\n", layer);
+    abort();
+  }
   Device& g1 = Engine::instance().gpu(1);
   // Measured: spreading these over two DMA streams changes nothing (70.4 tok/s both ways), so the
   // ~4.1GB/s of prefill-time slot streaming is a memory-subsystem limit (scattered 6MB reads out of
   // a 75GB pinned arena), not a limit on transfers in flight. Keep one stream and one event.
   cudaStream_t dma = g1.stream(1);
-  HELIOS_CUDA_CHECK(cudaMemcpyAsync(pool_ + (size_t)slot * stride_, src, stride_,
+  HELIOS_CUDA_CHECK(cudaMemcpyAsync(pool_ + (size_t)slot * stride_, src, bytes,
                                     cudaMemcpyHostToDevice, dma));
   HELIOS_CUDA_CHECK(cudaEventRecord(g1.event(1), dma));
   pending_.push_back(slot);
-  st_.h2d_bytes += stride_;
+  st_.h2d_bytes += bytes;
   st_.misses++;
 }
 
@@ -326,6 +331,14 @@ void SlotMgr::sync_copies() {
 }
 
 void SlotMgr::begin_step() { used_.clear(); }
+
+void SlotMgr::reserve(int slot) {
+  if (slot < 0 || slot >= n_slots_) return;
+  Slot& s = slots_[slot];
+  if (s.busy) return;            // already reserved this step (acquire(), or an earlier find)
+  s.busy = true;
+  used_.push_back(slot);
+}
 
 void SlotMgr::end_step() {
   for (int i : used_) if (slots_[i].layer >= 0) slots_[i].busy = false;

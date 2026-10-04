@@ -7,6 +7,7 @@
 #include "engine/slotmgr.hpp"
 #include "engine/sampler.hpp"
 #include "engine/prefix.hpp"
+#include "core/vision.hpp"
 #include "tokenizer/tokenizer.hpp"
 #include <functional>
 #include <memory>
@@ -30,6 +31,7 @@ public:
   const half* logits_dev() const;                   // logits of the last decoded token
   int pos() const { return pos_; }
   int context_cap() const { return c_ ? c_->cap() : 0; }
+  const std::string& model_directory() const { return m_->directory; }
 
   // ---- cross-request prefix cache ----
   // The KV, indexer and pool planes are position-addressed and never cleared between requests, so a
@@ -49,7 +51,8 @@ public:
 
   // Full generation loop (prompt already tokenized). on_token may return false to stop.
   std::vector<int> generate(const std::vector<int>& prompt, const GenParams& p,
-                            const std::function<bool(int)>& on_token = nullptr);
+                            const std::function<bool(int)>& on_token = nullptr,
+                            const std::vector<ImageEmbedding>& images = {});
 
   struct Timings {
     double prefill_ms = 0, decode_ms = 0;
@@ -65,6 +68,9 @@ public:
                    const std::string& sub_path = "");
 
 private:
+  const std::vector<ImageEmbedding>* images_ = nullptr;
+  bool cached_image_ = false;
+  void inject_images(int n, int pos);
   void run_chunk(int n, int pos, bool prefill);
 
   // ---- cross-request prefix cache (implementation) ----
@@ -191,8 +197,6 @@ private:
     float* host_y = nullptr;       // pinned: MoE output staging
   } w1;
 
-  size_t moe_off_[12] = {};      // slab piece offsets from the loader
-  int routed_mul1_ = 0;          // mul1 word shared by all routed experts
   MoEPlan moe_plan_;
   Timings tm_;
 };

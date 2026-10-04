@@ -35,6 +35,10 @@ public:
   // Slots are keyed by the TENSOR-NAMESPACE layer index (Model::slab(layer, expert)).
   // Slot holding (layer, expert) or -1 if absent.
   int find(int layer, int expert);
+  // Mark a slot as read by the current step. Every slot the step will use MUST be reserved (or
+  // acquired): end_step()/sync_copies() only protect slots in used_, so an unreserved resident is
+  // evictable mid-step, and a later find() for it returns -1.
+  void reserve(int slot);
   // Slot index for (layer, expert), streaming the slab from RAM if needed.
   // Returns a slot whose contents are NOT yet guaranteed until sync_copies()/ensure().
   int acquire(int layer, int expert);
@@ -72,7 +76,7 @@ private:
     uint32_t heat = 0;
     uint64_t last_used = 0;
     bool pinned = false;
-    bool busy = false;             // copy in flight for this step
+    bool busy = false;             // reserved for the current step: copy in flight or resident+needed
   };
   int evict_one();
   std::string census_path_;

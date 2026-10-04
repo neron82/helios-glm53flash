@@ -30,6 +30,10 @@ struct ChatMsg {
   std::string tool_call_id;                // tool
 };
 
+// Optional image collection for the vision frontend; reject unsupported media.
+bool chat_content_text(const helios_json& content, std::string& text, std::string& error,
+                       std::vector<std::string>* image_urls = nullptr);
+
 // Render the prompt. `tools` are the raw OpenAI tool objects ({"type":"function","function":{...}}).
 // `thinking`: when false the prompt ends with a closed empty think block (<|assistant|><think>
 // </think>), which is exactly how historical assistant turns are rendered, so the model answers
@@ -58,6 +62,7 @@ public:
     std::string content;                      // new visible content (may be empty)
     bool tool_begin = false;                  // start of a tool call (name is set)
     std::string tool_name;
+    std::string tool_call_id;                 // id assigned to this call (call_<n>)
     std::string tool_args_fragment;           // arguments JSON fragment for the active tool call
     bool stop = false;                        // a turn boundary was reached: end generation
   };
@@ -74,6 +79,7 @@ private:
   bool in_think_ = true;
   bool started_in_think_ = true;
   bool in_tool_ = false;
+  bool done_ = false;         // turn boundary seen: nothing after it may be parsed or emitted
   std::string tool_body_;
   ParsedOutput out_;
   std::vector<Delta> pending_;

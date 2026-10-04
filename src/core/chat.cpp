@@ -81,6 +81,34 @@ void append_args(const json& args, std::string& out) {
 
 }  // namespace
 
+bool chat_content_text(const json& content, std::string& text, std::string& error,
+                       std::vector<std::string>* image_urls) {
+  text.clear();
+  if (content.is_null()) return true;
+  if (content.is_string()) { text = content.get<std::string>(); return true; }
+  if (content.is_array()) {
+    for (const auto& part : content) {
+      if (part.is_string()) text += part.get<std::string>();
+      else if (part.is_object() && part.value("type", std::string()) == "text" &&
+               part.contains("text") && part["text"].is_string())
+        text += part["text"].get<std::string>();
+      else if (image_urls && part.is_object() && part.value("type", std::string()) == "image_url" &&
+               part.contains("image_url") && part["image_url"].is_object() &&
+               part["image_url"].contains("url") && part["image_url"]["url"].is_string()) {
+        text += "[HELIOS_IMAGE_" + std::to_string(image_urls->size()) + "]";
+        image_urls->push_back(part["image_url"]["url"].get<std::string>());
+      } else {
+        error = "unsupported content part: use text or image_url with a base64 data URL; video and audio are not implemented";
+        text.clear();
+        return false;
+      }
+    }
+    return true;
+  }
+  error = "message content must be text, null, or an array of text parts";
+  return false;
+}
+
 std::string render_chat(const std::vector<ChatMsg>& msgs, const json& tools,
                         const std::string& reasoning_effort, bool add_generation_prompt,
                         bool thinking) {
@@ -106,7 +134,9 @@ std::string render_chat(const std::vector<ChatMsg>& msgs, const json& tools,
       for (const json& fn : shown) {
         json clean = json::object();
         for (auto it = fn.begin(); it != fn.end(); ++it) {
-          if (it.key() == "strict") continue;
+          // The reference template's tool_to_json skips exactly these two keys; a deferred tool was
+          // already dropped above, so a surviving defer_loading:false must not reach the model.
+          if (it.key() == "strict" || it.key() == "defer_loading") continue;
           clean[it.key()] = it.value();
         }
         out += to_json_like_jinja(clean);
@@ -187,10 +217,11 @@ std::string render_chat(const std::vector<ChatMsg>& msgs, const json& tools,
 // ---------------------------------------------------------------- output parsing
 namespace {
 
-// This checkpoint closes its thinking with `</think>` (token 154842 in tokenizer.json); the
-// DeepSeek-style marker is accepted too in case a variant emits it.
+// This checkpoint closes its thinking with `</think>` (token 154842 in tokenizer.json). There is no
+// DeepSeek-style alternative to accept here: nothing in the checkpoint's chat_template.jinja or
+// tokenizer_config.json mentions one, and a previous constant for it was both unreferenced and
+// malformed.
 const char* kThinkEnd = "</think>";
-const char* kThinkEndAlt = "<ï½" "endâofâthinkingï½>";
 const char* kToolBegin = "<tool_call>";
 const char* kToolEnd = "</tool_call>";
 const char* kObservation = "<|observation|>";
@@ -243,11 +274,20 @@ std::string tool_name_of(const std::string& body) {
   return strip_ws(body.substr(0, p == std::string::npos ? body.size() : p));
 }
 
+// Clients match a tool result to its call by id, so ids must be unique across the turn - an
+// unterminated final call included.
+std::string tool_id_for(size_t n) {
+  char buf[32];
+  snprintf(buf, sizeof(buf), "call_%d", (int)n);
+  return buf;
+}
+
 }  // namespace
 
 std::vector<OutputParser::Delta> OutputParser::feed(const std::string& piece) {
-  buf_ += piece;
   pending_.clear();
+  if (done_) return pending_;   // after a turn boundary the rest of the stream is hallucination
+  buf_ += piece;
   drain(false);
   return pending_;
 }
@@ -260,7 +300,11 @@ std::vector<OutputParser::Delta> OutputParser::finish() {
     d.tool_begin = true;
     d.tool_name = tool_name_of(tool_body_);
     d.tool_args_fragment = args_to_json(tool_body_);
-    ToolCall tc{"call_0", d.tool_name, d.tool_args_fragment};
+    ToolCall tc;
+    tc.id = tool_id_for(out_.tool_calls.size());
+    tc.name = d.tool_name;
+    tc.arguments = d.tool_args_fragment;
+    d.tool_call_id = tc.id;
     out_.tool_calls.push_back(tc);
     pending_.push_back(d);
     tool_body_.clear();
@@ -290,11 +334,10 @@ void OutputParser::drain(bool flush) {
       d.tool_name = name;
       d.tool_args_fragment = args_to_json(tool_body_);
       ToolCall tc;
-      char idbuf[32];
-      snprintf(idbuf, sizeof(idbuf), "call_%d", (int)out_.tool_calls.size());
-      tc.id = idbuf;
+      tc.id = tool_id_for(out_.tool_calls.size());
       tc.name = name;
       tc.arguments = d.tool_args_fragment;
+      d.tool_call_id = tc.id;
       out_.tool_calls.push_back(tc);
       pending_.push_back(d);
       tool_body_.clear();
@@ -347,12 +390,22 @@ void OutputParser::drain(bool flush) {
       Delta d;
       d.stop = true;
       pending_.push_back(d);
+      done_ = true;
       buf_.clear();
       return;
     } else if (which == std::string(kObservation) || which == std::string(kEos) ||
                which == std::string(kEndS)) {
-      // control tokens: drop them, and stop treating text as visible content
-      break;
+      // End of the assistant turn. <|observation|> is what the *template* writes before tool
+      // responses, so a model that emits it has run past the end of its turn and is now inventing
+      // the observation it is owed - everything it writes next (the "tool response", its own
+      // retries, further tool calls) is hallucination that must not reach the client. Stop here,
+      // exactly as for <|user|>: the client supplies the real tool results and asks again.
+      Delta d;
+      d.stop = true;
+      pending_.push_back(d);
+      done_ = true;
+      buf_.clear();
+      return;
     }
   }
   buf_.erase(0, pos);

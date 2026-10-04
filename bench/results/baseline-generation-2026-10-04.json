@@ -1,0 +1,17 @@
+[
+  {
+    "case": "arithmetic",
+    "answer": "4",
+    "pass": true
+  },
+  {
+    "case": "translation",
+    "answer": "Bonjour",
+    "pass": true
+  },
+  {
+    "case": "SSE",
+    "answer": "Paris",
+    "pass": true
+  }
+]

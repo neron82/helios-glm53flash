@@ -96,6 +96,8 @@ private:
 };
 
 struct ChatRequest {
+  std::vector<std::string> image_urls;
+  std::vector<ImageEmbedding> images;
   std::vector<ChatMsg> msgs;
   json tools = json::array();
   std::string reasoning_effort = "high";   // replaced from the server default by parse_chat
@@ -129,19 +131,6 @@ bool parse_common(const json& body, GenParams& p, std::string& err) {
   return true;
 }
 
-std::string content_to_text(const json& c) {
-  if (c.is_string()) return c.get<std::string>();
-  if (c.is_array()) {   // OpenAI content parts: keep the text parts
-    std::string out;
-    for (const auto& part : c) {
-      if (part.is_object() && part.contains("text") && part["text"].is_string())
-        out += part["text"].get<std::string>();
-    }
-    return out;
-  }
-  return "";
-}
-
 bool parse_chat(const json& body, ChatRequest& out, std::string& err) {
   if (!body.contains("messages") || !body["messages"].is_array()) {
     err = "messages is required";
@@ -150,7 +139,8 @@ bool parse_chat(const json& body, ChatRequest& out, std::string& err) {
   for (const auto& m : body["messages"]) {
     ChatMsg msg;
     msg.role = m.value("role", "user");
-    msg.content = content_to_text(m.contains("content") ? m["content"] : json(""));
+    if (!chat_content_text(m.contains("content") ? m["content"] : json(""),
+                           msg.content, err, &out.image_urls)) return false;
     if (m.contains("reasoning_content") && m["reasoning_content"].is_string())
       msg.reasoning = m["reasoning_content"].get<std::string>();
     if (m.contains("tool_call_id") && m["tool_call_id"].is_string())
@@ -274,9 +264,11 @@ int run_server(Runner& runner, Tokenizer& tk, const std::string& host, int port,
   srv.Get("/metrics", metrics);
   srv.Get("/v1/metrics", metrics);
 
-  // Shared generation driver: runs the model, feeds the parser, and streams or accumulates.
+  // Shared generation driver: runs the model, feeds the parser, and streams or accumulates. The
+  // emit callback returns false to stop generation - that is how a client that went away cancels
+  // its request instead of leaving the engine decoding a whole output budget for nobody.
   auto generate = [&](const std::vector<int>& prompt, const GenParams& p, ChatRequest& req,
-                      GenOutcome& out, std::function<void(OutputParser::Delta&)> emit) {
+                      GenOutcome& out, std::function<bool(OutputParser::Delta&)> emit) {
     OutputParser parser(/*start_in_think=*/req.thinking);
     Utf8Streamer utf8;
     std::vector<int> ids;
@@ -300,10 +292,10 @@ int run_server(Runner& runner, Tokenizer& tk, const std::string& host, int port,
               return false;
             }
         }
-        if (emit) emit(d);
+        if (emit && !emit(d)) return false;   // client gone: stop decoding for nobody
       }
       return true;
-    });
+    }, req.images);
     std::vector<OutputParser::Delta> rest = parser.finish();
     for (auto& d : rest) { if (d.stop) { out.hit_stop = true; } if (emit) emit(d); }
     const ParsedOutput& parsed = parser.parsed();
@@ -328,6 +320,27 @@ int run_server(Runner& runner, Tokenizer& tk, const std::string& host, int port,
     ChatRequest req;
     std::string err;
     if (!parse_chat(body, req, err)) { error_response(res, 400, err, "invalid_request_error"); return; }
+    if (!req.image_urls.empty()) {
+      std::lock_guard<std::mutex> lock(gen_mu);
+      for (size_t i = 0; i < req.image_urls.size(); ++i) {
+        ImageEmbedding image;
+        if (!encode_image_url(req.image_urls[i], runner.model_directory(),
+                              Engine::instance().gpu(0).phys_idx(), image, err)) {
+          error_response(res, 400, err, "invalid_request_error"); return;
+        }
+        std::string marker = "[HELIOS_IMAGE_" + std::to_string(i) + "]";
+        std::string tokens = "<|begin_of_image|>";
+        for (int row = 0; row < image.rows; ++row) tokens += "<|image|>";
+        tokens += "<|end_of_image|>";
+        bool found = false;
+        for (auto& message : req.msgs) {
+          size_t pos = message.content.find(marker);
+          if (pos != std::string::npos) { message.content.replace(pos, marker.size(), tokens); found = true; break; }
+        }
+        if (!found) { error_response(res, 400, "image placeholder missing", "invalid_request_error"); return; }
+        req.images.push_back(std::move(image));
+      }
+    }
     req.gen.stop.clear();
     parse_common(body, req.gen, err);
     req.stream = body.value("stream", false);
@@ -337,6 +350,21 @@ int run_server(Runner& runner, Tokenizer& tk, const std::string& host, int port,
     std::string prompt_text = render_chat(req.msgs, tools, req.reasoning_effort,
                                           /*add_generation_prompt=*/true, req.thinking);
     std::vector<int> prompt = tk.encode(prompt_text);
+    if (!req.images.empty()) {
+      if (prompt.size() >= (size_t)runner.context_cap()) {
+        error_response(res, 400, "image prompt exceeds context capacity", "invalid_request_error"); return;
+      }
+      const int image_id = tk.encode("<|image|>").at(0);
+      size_t cursor = 0;
+      for (auto& image : req.images) {
+        while (cursor < prompt.size() && prompt[cursor] != image_id) ++cursor;
+        image.start = cursor;
+        for (int row = 0; row < image.rows; ++row)
+          if (cursor >= prompt.size() || prompt[cursor++] != image_id) {
+            error_response(res, 400, "image tokens and embeddings differ", "invalid_request_error"); return;
+          }
+      }
+    }
     const std::string id = new_id("chatcmpl");
     const int64_t created = (int64_t)std::chrono::duration_cast<std::chrono::seconds>(
                                 std::chrono::system_clock::now().time_since_epoch()).count();
@@ -392,8 +420,8 @@ int run_server(Runner& runner, Tokenizer& tk, const std::string& host, int port,
           bool alive = true;
           int tool_index = -1;
           GenOutcome out;
-          generate(prompt, req.gen, req, out, [&](OutputParser::Delta& d) {
-            if (!alive) return;
+          generate(prompt, req.gen, req, out, [&](OutputParser::Delta& d) -> bool {
+            if (!alive) return false;   // sink already dead: let the runner wind down
             if (!d.reasoning.empty()) {
               json j = base;
               j["choices"] = json::array({{{"index", 0},
@@ -413,9 +441,7 @@ int run_server(Runner& runner, Tokenizer& tk, const std::string& host, int port,
               j["choices"] = json::array(
                   {{{"index", 0},
                     {"delta", {{"tool_calls", json::array({{{"index", tool_index},
-                                                            {"id", out.tool_calls.empty()
-                                                                       ? std::string("call_0")
-                                                                       : out.tool_calls.back().id},
+                                                            {"id", d.tool_call_id},
                                                             {"type", "function"},
                                                             {"function", {{"name", d.tool_name},
                                                                           {"arguments", ""}}}}})}}},
@@ -432,6 +458,7 @@ int run_server(Runner& runner, Tokenizer& tk, const std::string& host, int port,
                 alive = send(a);
               }
             }
+            return alive;
           });
           const char* finish = !out.tool_calls.empty() ? "tool_calls"
                                : out.hit_stop ? "stop"

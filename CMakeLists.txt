@@ -5,6 +5,7 @@ set(CMAKE_CUDA_STANDARD 17)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -march=x86-64-v3 -Wall")
 find_package(CUDAToolkit REQUIRED)
 find_package(Threads REQUIRED)
+enable_testing()
 set(CMAKE_CUDA_ARCHITECTURES 86)
 set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -O3 --use_fast_math -lineinfo")
 
@@ -21,6 +22,8 @@ add_executable(helios
   src/core/safetensors.cpp
   src/core/device.cpp
   src/core/model.cpp
+  src/core/expert_layout.cpp
+  src/core/vision.cpp
   src/engine/cache.cpp
   src/engine/slotmgr.cpp
   src/engine/sampler.cpp
@@ -37,6 +40,7 @@ target_include_directories(helios PRIVATE src third_party
   ${CMAKE_CURRENT_SOURCE_DIR}/src/cuda/quant)
 target_link_libraries(helios PRIVATE CUDA::cudart CUDA::cuda_driver Threads::Threads
   exl3_quant_core aux attn_core)
+target_compile_definitions(helios PRIVATE HELIOS_VISION_SCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/scripts/vision_encode.py")
 
 add_executable(helios_utf8_test test/test_utf8.cpp)
 target_include_directories(helios_utf8_test PRIVATE src)
@@ -52,3 +56,12 @@ target_link_libraries(helios_chat_test PRIVATE Threads::Threads)
 add_executable(helios_tokenizer_test src/tokenizer/test_tokenizer.cpp src/tokenizer/tokenizer.cpp)
 target_include_directories(helios_tokenizer_test PRIVATE src third_party)
 target_link_libraries(helios_tokenizer_test PRIVATE Threads::Threads)
+
+add_executable(helios_expert_layout_test test/test_expert_layout.cpp
+  src/core/expert_layout.cpp src/core/safetensors.cpp)
+target_include_directories(helios_expert_layout_test PRIVATE src third_party)
+target_link_libraries(helios_expert_layout_test PRIVATE Threads::Threads)
+add_test(NAME expert_layout COMMAND helios_expert_layout_test)
+add_test(NAME prefix_policy COMMAND helios_prefix_test)
+add_test(NAME utf8 COMMAND helios_utf8_test)
+add_test(NAME chat_protocol COMMAND helios_chat_test)

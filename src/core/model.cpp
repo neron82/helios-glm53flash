@@ -33,36 +33,6 @@ static void cvt_f32_f16(const void* src, half* dst, size_t n) {
 
 void Group::set_dims(const std::vector<int64_t>& ts) { K = (int)(ts[2] / 16); }
 
-// ---------- expert slab layout ----------
-static size_t align64(size_t x) { return (x + 63) & ~(size_t)63; }
-struct SlabLayout {
-  size_t off[12];    // order: gate t,suh,svh,mul1, up..., down...
-  size_t stride;
-  size_t piece[12];  // byte sizes
-};
-static SlabLayout make_slab_layout(int hidden, int moe_inter, int K) {
-  // trellis bytes = out*in*K/8 ; suh = in*2 ; svh = out*2 ; mul1 = 4
-  size_t t = (size_t)hidden * moe_inter * K / 8;
-  SlabLayout sl{};
-  size_t o = 0;
-  // gate: out=moe_inter in=hidden -> suh hidden, svh moe_inter
-  sl.piece[0]=t;                 sl.off[0]=o; o+=t;
-  sl.piece[1]=(size_t)hidden*2;  sl.off[1]=o; o+=hidden*2;
-  sl.piece[2]=(size_t)moe_inter*2; sl.off[2]=o; o+=moe_inter*2;
-  sl.piece[3]=4;                 sl.off[3]=o; o=align64(o+4);
-  sl.piece[4]=t;                 sl.off[4]=o; o+=t;
-  sl.piece[5]=(size_t)hidden*2;  sl.off[5]=o; o+=hidden*2;
-  sl.piece[6]=(size_t)moe_inter*2; sl.off[6]=o; o+=moe_inter*2;
-  sl.piece[7]=4;                 sl.off[7]=o; o=align64(o+4);
-  // down: out=hidden in=moe_inter -> suh moe_inter, svh hidden
-  sl.piece[8]=t;                 sl.off[8]=o; o+=t;
-  sl.piece[9]=(size_t)moe_inter*2; sl.off[9]=o; o+=moe_inter*2;
-  sl.piece[10]=(size_t)hidden*2;   sl.off[10]=o; o+=hidden*2;
-  sl.piece[11]=4;                sl.off[11]=o; o=align64(o+4);
-  sl.stride = o;
-  return sl;
-}
-
 // ---------- loading jobs ----------
 struct Job {
   const TensorInfo* ti = nullptr;
@@ -77,7 +47,6 @@ struct Job {
 struct Loader : Model {
   bool ram_only = false;
   std::vector<Job> jobs;
-  SlabLayout slay;
   int missing = 0;
   bool verbose_alloc = true;
 
@@ -265,10 +234,11 @@ struct Loader : Model {
     load_f16_from(p + ".post_attention_layernorm.weight", ly.post_ln, 0, true);
   }
 
-  void load_experts(int l, int slot_base) {
+  void load_experts(int l) {
+    const auto& slay = expert_layouts.at(l);
     std::string p = L(l) + ".mlp.experts.";
     for (int e = 0; e < cfg.n_expert; e++) {
-      char* slab = arena + (size_t)(slot_base + e) * slay.stride;
+      char* slab = arena + arena_byte_base[l] + (size_t)e * slay.stride;
       static const char* tn[3] = {"gate_proj", "up_proj", "down_proj"};
       static const char* pn[4] = {".trellis", ".suh", ".svh", ".mul1"};
       for (int t = 0; t < 3; t++) for (int q = 0; q < 4; q++) {
@@ -313,7 +283,7 @@ struct Loader : Model {
     load_group(p + ".mlp.shared_experts.up_proj",  mtp.moe_w.shared[1], 0);
     load_group(p + ".mlp.shared_experts.down_proj", mtp.moe_w.shared[2], 0);
     mtp.moe_w.arena_layer = arena_slot_base[l];
-    load_experts(l, arena_slot_base[l]);
+    load_experts(l);
     load_f16_from(p + ".input_layernorm.weight", mtp.input_ln, 0, true);
     load_f16_from(p + ".post_attention_layernorm.weight", mtp.post_ln, 0, true);
     load_group(p + ".eh_proj", mtp.eh_proj, 0);
@@ -323,32 +293,45 @@ struct Loader : Model {
   }
 
   bool load(const std::string& dir, bool ro, bool verbose) {
+    directory = dir;
     ram_only = ro;
     try { shards.load_dir(dir); }
     catch (const std::exception& e) { fprintf(stderr, "[model] shard load failed: %s\n", e.what()); return false; }
     if (!parse_config(dir)) return false;
 
-    // expert K bits from a sample expert trellis (2-bit expected)
-    auto* probe = shards.find(L(3) + ".mlp.experts.0.gate_proj.trellis");
-    int K = probe ? (int)(probe->shape[2] / 16) : 2;
-    slay = make_slab_layout(cfg.hidden, cfg.moe_inter, K);
-    slot_stride = slay.stride;
-    slab_off.assign(slay.off, slay.off + 12);
-
-    // arena slot bases: sparse layers (3..44) + MTP
+    // Validate every expert before allocating or copying. Bit widths may differ
+    // between layers (including MTP), so one probe cannot describe the arena.
     arena_slot_base.assign(cfg.n_layers + 1, -1);
+    arena_byte_base.assign(cfg.n_layers + 1, 0);
+    expert_layouts.resize(cfg.n_layers + 1);
+    size_t arena_bytes = 0;
     int seq = 0;
-    for (int l = 0; l < cfg.n_layers; l++) if (cfg.moe[l]) arena_slot_base[l] = 288 * seq++;
-    if (cfg.has_mtp) arena_slot_base[cfg.mtp_layer] = 288 * seq++;
+    try {
+      for (int l = 0; l <= cfg.n_layers; ++l) {
+        if (l == cfg.n_layers ? !cfg.has_mtp : !cfg.moe[l]) continue;
+        auto& layout = expert_layouts[l];
+        layout = expert_layout(shards, l, cfg.n_expert, cfg.hidden, cfg.moe_inter);
+        arena_slot_base[l] = cfg.n_expert * seq++;
+        arena_byte_base[l] = arena_bytes;
+        arena_bytes += (size_t)cfg.n_expert * layout.stride;
+        if (l < cfg.n_layers) slot_stride = std::max(slot_stride, layout.stride);
+        if (verbose)
+          printf("[model] experts L%d bits=%d/%d/%d slab=%.3fMB arena_offset=%zu\n",
+                 l, layout.bits[0], layout.bits[1], layout.bits[2],
+                 layout.stride / 1048576.0, arena_byte_base[l]);
+      }
+    } catch (const std::exception& e) {
+      fprintf(stderr, "[model] expert layout invalid: %s\n", e.what());
+      return false;
+    }
     arena_layers = seq;
-    size_t arena_bytes = (size_t)arena_layers * cfg.n_expert * slay.stride;
     arena = (char*)mmap(nullptr, arena_bytes, PROT_READ|PROT_WRITE,
                         MAP_PRIVATE|MAP_ANONYMOUS|MAP_NORESERVE, -1, 0);
     if (arena == MAP_FAILED) { fprintf(stderr, "[model] arena mmap %zu GB failed\n", arena_bytes >> 30); return false; }
     ram_bytes = arena_bytes;
     // Pin the arena: pageable host memory caps expert H2D at ~8 GB/s, pinned runs at link speed.
     // Registration locks the (already resident) pages; failure is non-fatal (we keep pageable).
-    if (getenv("HELIOS_NO_PIN") == nullptr) {
+    if (!ram_only && getenv("HELIOS_NO_PIN") == nullptr) {
       auto t_pin = std::chrono::steady_clock::now();
       cudaError_t pe = cudaHostRegister(arena, arena_bytes, cudaHostRegisterDefault);
       double pin_ms = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t_pin).count();
@@ -375,7 +358,7 @@ struct Loader : Model {
       load_attn(l, ly);
       load_mlp(l, ly);
       load_hc(l, ly);
-      if (ly.moe) load_experts(l, arena_slot_base[l]);
+      if (ly.moe) load_experts(l);
     }
     load_mtp();
 
@@ -386,13 +369,13 @@ struct Loader : Model {
       cudaMemGetInfo(&free_v, &tot_v);
       cudaSetDevice(Engine::instance().gpu(0).phys_idx());   // restore: allocations must not leak
                                                              // the current device to later stages
-      free_v -= (size_t)Engine::instance().gpu(1).pool_used();
-      free_v = free_v > (size_t)Engine::instance().gpu(1).pool_used() ? free_v : 0;
+      const size_t pool_used = Engine::instance().gpu(1).pool_used();
+      free_v = free_v > pool_used ? free_v - pool_used : 0;
       size_t avail = free_v > (4ull<<30) ? free_v - (4ull<<30) : 0;
-      int slots = (int)(avail / slay.stride);
+      int slots = (int)(avail / slot_stride);
       if (const char* ev = getenv("HELIOS_SLOTS")) slots = atoi(ev);
       n_slots = std::max(slots, 0);
-      slot_pool = A((size_t)n_slots * slay.stride, 1, 4096);
+      slot_pool = A((size_t)n_slots * slot_stride, 1, 4096);
     }
 
     // sort jobs: big GPU transfers first, then arena reads
@@ -406,20 +389,21 @@ struct Loader : Model {
                         jobs.size(), (double)ram_bytes/(1<<30), (double)gpu0_bytes/(1<<30),
                         (double)gpu1_bytes/(1<<30), n_slots);
 
+    if (missing) {
+      fprintf(stderr, "[model] refusing incomplete checkpoint: %d tensors missing\n", missing);
+      return false;
+    }
     run_jobs(verbose);
-    verify_slabs(verbose);
-    if (!ram_only) verify_gpu_tensors(verbose);
-
-    if (missing) fprintf(stderr, "[model] WARNING: %d tensors missing\n", missing);
-    return true;
+    if (!verify_slabs(verbose)) return false;
+    return ram_only || verify_gpu_tensors(verbose);
   }
 
   // spot-check arena contents against shard bytes
-  void verify_slabs(bool verbose) {
-    std::mt19937 rng(1234);
+  bool verify_slabs(bool verbose) {
     std::atomic<int> checked{0}, bad{0};
-    auto worker = [&]() {
-      void* tmp = malloc(4u << 20);
+    auto worker = [&](int worker_id) {
+      std::mt19937 rng(1234 + worker_id);
+      std::vector<char> tmp;
       for (int it = 0; it < 16; it++) {
         int l = 3 + (int)(rng() % (cfg.n_layers - 3 + (cfg.has_mtp ? 2 : 1)));
         if (l >= cfg.n_layers) l = cfg.mtp_layer;
@@ -432,27 +416,28 @@ struct Loader : Model {
         std::string nm = L(l) + ".mlp.experts." + std::to_string(e) + "." + tn[t] + pn[q];
         const TensorInfo* ti = shards.find(nm);
         if (!ti) continue;
-        shards.read(*ti, tmp);
-        const char* sl = slab(l, e) + slay.off[t * 4 + q];
-        if (memcmp(tmp, sl, ti->bytes) != 0) { fprintf(stderr, "[verify] MISMATCH %s\n", nm.c_str()); bad++; }
+        tmp.resize(ti->bytes);
+        shards.read(*ti, tmp.data());
+        const char* sl = slab(l, e) + expert_layouts[l].off[t * 4 + q];
+        if (memcmp(tmp.data(), sl, ti->bytes) != 0) { fprintf(stderr, "[verify] MISMATCH %s\n", nm.c_str()); bad++; }
         checked++;
       }
-      free(tmp);
     };
     std::vector<std::thread> th;
-    for (int i = 0; i < 16; i++) th.emplace_back(worker);
+    for (int i = 0; i < 16; i++) th.emplace_back(worker, i);
     for (auto& x : th) x.join();
     printf("[verify] %d slab pieces checked, %d mismatches\n", checked.load(), bad.load());
     if (bad) fprintf(stderr, "[model] ARENA VERIFICATION FAILED\n");
+    return bad == 0;
   }
 
   // Sample the GPU-resident trunk tensors and compare with the shard bytes (mirrors verify_slabs
   // for the device side). Catches placement/transfer bugs before any kernel runs.
-  void verify_gpu_tensors(bool verbose) {
+  bool verify_gpu_tensors(bool verbose) {
     struct Item { const std::string name; void* dev; size_t bytes; };
     std::vector<Item> items;
     auto addg = [&](const std::string& n, const Group& g) {
-      if (g.trellis) items.push_back({n + ".trellis", g.trellis, (size_t)g.out * g.in * g.K / 8 * 2});
+      if (g.trellis) items.push_back({n + ".trellis", g.trellis, (size_t)g.out * g.in * g.K / 8});
       if (g.suh) items.push_back({n + ".suh", (void*)g.suh, (size_t)g.in * 2});
       if (g.svh) items.push_back({n + ".svh", (void*)g.svh, (size_t)g.out * 2});
     };
@@ -460,14 +445,14 @@ struct Loader : Model {
       Layer& L = layers[l];
       std::string p2 = ("model.language_model.layers." + std::to_string(l));
       if (L.kind == KDA) {
-        addg(p2 + ".linear_attn.qkv_proj", L.kda.qkv);
-        addg(p2 + ".linear_attn.o_proj", L.kda.o_proj);
+        addg(p2 + ".self_attn.qkv_proj", L.kda.qkv);
+        addg(p2 + ".self_attn.o_proj", L.kda.o_proj);
       } else {
         addg(p2 + ".self_attn.q_a_proj", L.mla.q_a);
         addg(p2 + ".self_attn.q_b_proj", L.mla.q_b);
         addg(p2 + ".self_attn.kv_a_proj_with_mqa", L.mla.kv_a);
         addg(p2 + ".self_attn.o_proj", L.mla.o_proj);
-        addg(p2 + ".indexer.wq_b", L.idx.wq_b);
+        addg(p2 + ".self_attn.indexer.wq_b", L.idx.wq_b);
       }
       if (L.moe) { addg(p2 + ".mlp.shared_experts.gate_proj", L.moe_w.shared[0]); }
       else { addg(p2 + ".mlp.gate_proj", L.dense.gate); }
@@ -502,6 +487,7 @@ struct Loader : Model {
       n++;
     }
     printf("[verify-gpu] %d device tensors checked, %d mismatches\n", n, bad);
+    return bad == 0;
   }
 
   void run_jobs(bool verbose);
@@ -517,6 +503,8 @@ struct Ctx {
 };
 
 void Loader::run_jobs(bool verbose) {
+  // Resolve lazy descriptors before workers read them concurrently.
+  for (int i = 0; i < shards.shard_count(); ++i) shards.shard_fd(i);
   std::atomic<size_t> next{0};
   int nthreads = 16;
   auto t0 = std::chrono::steady_clock::now();

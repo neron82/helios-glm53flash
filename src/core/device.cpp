@@ -119,7 +119,11 @@ static double measure_h2d_gbps(int dev) {
 bool Engine::init() {
   // rank devices by PCIe bandwidth: slow link = rank 0 (trunk), fast = rank 1 (streaming)
   int idx[N_GPU];
-  HELIOS_CUDA_CHECK(cudaGetDeviceCount(&idx[0])); // reuse var: count
+  cudaError_t available = cudaGetDeviceCount(&idx[0]); // reuse var: count
+  if (available != cudaSuccess) {
+    fprintf(stderr, "[device] cannot access CUDA GPUs: %s\n", cudaGetErrorString(available));
+    return false;
+  }
   if (idx[0] < N_GPU) { fprintf(stderr, "need %d GPUs\n", N_GPU); return false; }
   int order[N_GPU]; for (int i = 0; i < N_GPU; i++) order[i] = i;
   double bw[N_GPU];

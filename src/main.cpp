@@ -11,6 +11,9 @@
 #include <cstdio>
 #include <regex>
 #include <map>
+#include <chrono>
+#include <fstream>
+#include "json.hpp"
 
 using namespace helios;
 
@@ -93,6 +96,9 @@ int main(int argc, char** argv) {
     std::string gen_text;
     int max_tokens = 64;
     float temperature = 0.7f;
+    bool ignore_eos = false;
+    std::string prompt_ids_file;
+    std::string census_path = dir + "/.helios.census";
     for (int i = 3; i < argc; i++) {
       std::string a = argv[i];
       if (a == "--ram-only") ram_only = true;
@@ -107,6 +113,9 @@ int main(int argc, char** argv) {
       else if (a == "--chunk" && i + 1 < argc) max_chunk = atoi(argv[++i]);
       else if (a == "--tokens" && i + 1 < argc) max_tokens = atoi(argv[++i]);
       else if (a == "--temp" && i + 1 < argc) temperature = atof(argv[++i]);
+      else if (a == "--ignore-eos") ignore_eos = true;
+      else if (a == "--prompt-ids" && i + 1 < argc) prompt_ids_file = argv[++i];
+      else if (a == "--census-file" && i + 1 < argc) census_path = argv[++i];
       else if (a == "--prompt" && i + 1 < argc) gen_text = argv[++i];
       else if (a == "--prompt-file" && i + 1 < argc) {
         std::string path = argv[++i];
@@ -120,7 +129,7 @@ int main(int argc, char** argv) {
         gen_text = raw;
       }
     }
-    if (!Engine::instance().init()) { fprintf(stderr, "engine init failed\n"); return 2; }
+    if (!ram_only && !Engine::instance().init()) { fprintf(stderr, "engine init failed\n"); return 2; }
     Model m;
     if (!m.load(dir, ram_only, true)) { fprintf(stderr, "model load failed\n"); return 3; }
     if (ram_only) {
@@ -141,8 +150,7 @@ int main(int argc, char** argv) {
     Cache cache;
     if (!cache.init(m, cap, max_chunk)) return 5;
     SlotMgr slots;
-    std::string census = dir + "/.helios.census";
-    if (m.slot_pool && m.n_slots > 0) { if (!slots.init_from_pool(m, m.slot_pool, m.n_slots, census.c_str())) return 6; }
+    if (m.slot_pool && m.n_slots > 0) { if (!slots.init_from_pool(m, m.slot_pool, m.n_slots, census_path.c_str())) return 6; }
     else {
       Device& g1 = Engine::instance().gpu(1);
       size_t pool_bytes = g1.stats().free_vram > (4ull << 30) ? g1.stats().free_vram - (4ull << 30) : 0;
@@ -168,21 +176,43 @@ int main(int argc, char** argv) {
     if (do_gen) {
       std::vector<ChatMsg> msgs = {{"user", gen_text.empty() ? "Hello!" : gen_text}};
       GenParams p;
-      p.max_tokens = max_tokens; p.temperature = temperature;
-      std::string prompt = tk.apply_chat_template(msgs, true);
+      p.max_tokens = max_tokens; p.temperature = temperature; p.ignore_eos = ignore_eos;
+      std::string prompt = tk.apply_chat_template(msgs, true, reasoning_effort);
       auto ids = tk.encode(prompt);
+      if (!prompt_ids_file.empty()) {
+        try {
+          std::ifstream input(prompt_ids_file);
+          nlohmann::json j; input >> j;
+          ids = j.get<std::vector<int>>();
+          if (ids.empty()) throw std::runtime_error("empty token sequence");
+          for (int id : ids)
+            if (id < 0 || id >= m.cfg.vocab) throw std::runtime_error("token id outside vocabulary");
+        } catch (const std::exception& e) {
+          fprintf(stderr, "invalid --prompt-ids: %s\n", e.what()); return 2;
+        }
+      }
+      if ((size_t)max_tokens + ids.size() > (size_t)cap) {
+        fprintf(stderr, "prompt plus generation exceeds --cap\n"); return 2;
+      }
       printf("[gen] prompt tokens=%zu\n", ids.size());
-      double t0 = (double)clock() / CLOCKS_PER_SEC;
+      auto t0 = std::chrono::steady_clock::now();
       auto out = runner.generate(ids, p, [&](int tok) {
         printf("%s", tk.decode({tok}).c_str());
         fflush(stdout);
         return true;
       });
-      double dt = (double)clock() / CLOCKS_PER_SEC - t0;
+      double dt = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
       printf("\n[gen] %zu tokens in %.2fs (%.2f tok/s)  prefill %.1f tok/s decode %.2f tok/s\n",
              out.size(), dt, dt > 0 ? out.size() / dt : 0.0,
              runner.timings().prefill_ms > 0 ? runner.timings().prefill_tokens * 1000.0 / runner.timings().prefill_ms : 0.0,
              runner.timings().decode_ms > 0 ? runner.timings().decode_tokens * 1000.0 / runner.timings().decode_ms : 0.0);
+      const auto& timings = runner.timings();
+      printf("[bench-json] %s\n", nlohmann::json({
+          {"prompt_tokens", ids.size()}, {"generated_tokens", out.size()},
+          {"prefill_tokens", timings.prefill_tokens}, {"prefill_ms", timings.prefill_ms},
+          {"decode_steps", timings.decode_tokens}, {"decode_ms", timings.decode_ms},
+          {"wall_seconds", dt}, {"emitted_tokens_per_second", dt > 0 ? out.size() / dt : 0.0}
+      }).dump().c_str());
       printf("[prefix] requests=%lld reused=%lld tokens, last request resumed at %d\n",
              runner.prefix_requests(), runner.prefix_reuse_total(), runner.prefix_resume());
       slots.print_stats();

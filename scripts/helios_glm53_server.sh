@@ -7,7 +7,7 @@
 # always goes to loopback.
 set -euo pipefail
 
-HELIOS_DIR=${HELIOS_DIR:-$HOME/projects/new_engine/helios}
+HELIOS_DIR=${HELIOS_DIR:-$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)}
 BIN=${BIN:-$HELIOS_DIR/build/helios}
 
 MODEL_DIR=${MODEL_DIR:-$HOME/models/glm53flash}

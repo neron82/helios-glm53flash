@@ -1,0 +1,5 @@
+torch
+transformers==5.16.1
+safetensors
+numpy
+Pillow

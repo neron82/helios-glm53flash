@@ -1,0 +1,22 @@
+{
+  "id": "chatcmpl-1a104cf7e960007",
+  "object": "chat.completion",
+  "created": 1791082069,
+  "model": "glm-5.3-flash-exl3",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "HELLO 42"
+      },
+      "logprobs": null,
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 156,
+    "completion_tokens": 5,
+    "total_tokens": 161
+  }
+}

@@ -17,6 +17,7 @@ struct GenParams {
   int rep_window = 256;
   uint64_t seed = 0;
   bool greedy = false;
+  bool ignore_eos = false;       // CLI benchmark only: generate the entire requested grid cell
   std::vector<std::string> stop;   // stop strings
   std::string grammar;             // unused (reserved)
 };

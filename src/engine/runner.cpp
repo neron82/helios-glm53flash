@@ -21,7 +21,6 @@
 
 namespace helios {
 
-namespace { constexpr int kRoutedBits = 2; }   // routed expert matrices in this checkpoint
 
 using namespace helios::aux;
 using namespace helios::attn;
@@ -157,12 +156,7 @@ bool Runner::init(Model& m, Cache& c, SlotMgr& sm, Tokenizer* tk, int max_chunk)
   w1.dense_a = (half*)A1((size_t)M * 2048 * 2);
   w1.dense_d = (float*)A1((size_t)M * 4096 * 4);
   w1.dense_had = (half*)A1((size_t)M * 4096 * 2);
-  {   // routed experts share one mul1 word (verified across the checkpoint)
-    const char* base = m.slab(3, 0);
-    memcpy(&routed_mul1_, base + moe_off_[3], 4);
-  }
   moe_plan_ = mp;
-  for (int i = 0; i < 12; i++) moe_off_[i] = m.slab_off.empty() ? 0 : m.slab_off[i];
 
   // pinned host staging for GPU0 <-> GPU1 exchanges (P2P unavailable)
   HELIOS_CUDA_CHECK(cudaHostAlloc((void**)&w0.pin_h, (size_t)M * 4096 * 2, cudaHostAllocDefault));
@@ -269,6 +263,9 @@ bool Runner::init(Model& m, Cache& c, SlotMgr& sm, Tokenizer* tk, int max_chunk)
 }
 
 void Runner::reset() {
+  snap_drain();
+  std::fill(snap_pos_.begin(), snap_pos_.end(), -1);
+  snap_next_ = snap_last_ = 0;
   pos_ = 0;
   hist_.clear();
   Device& g0 = Engine::instance().gpu(0);
@@ -522,7 +519,7 @@ void Runner::mla_layer(Layer& L, int n, int pos) {
     };
     wr("x", c_->xa, (size_t)n * 4096 * 2);
     wr("y", w0.qkv, (size_t)n * 512 * 4);
-    wr("tr", ka.trellis, (size_t)256 * 32 * 64 * 2);
+    wr("tr", ka.trellis, (size_t)L.mla.kv_a.in * L.mla.kv_a.out * L.mla.kv_a.K / 8);
     wr("suh", ka.suh, (size_t)4096 * 2);
     wr("svh", ka.svh, (size_t)512 * 2);
     cudaStreamSynchronize(s);
@@ -693,6 +690,8 @@ void Runner::moe_ffn(Layer& L, int n) {
     int E __attribute__((unused)) = m_->cfg.n_expert;
   }
   int E = m_->cfg.n_expert, K = m_->cfg.topk;
+  const auto& expert = m_->expert_layouts.at(L.index);
+  const auto& moe_off = expert.off;
   // shared expert on GPU0 (explicit guard: the rest of this function is GPU1 work)
   {
     DevGuard shared_guard(g0.phys_idx());
@@ -763,60 +762,80 @@ void Runner::moe_ffn(Layer& L, int n) {
     for (int e = 0; e < E; e++) {
       if (dev_cnt[e] <= 0) continue;
       sm_->note_request(L.index, e);
-      if (sm_->find(L.index, e) < 0) { sm_->acquire(L.index, e); acquired++; }
+      int slot = sm_->find(L.index, e);
+      if (slot < 0) {
+        sm_->acquire(L.index, e);
+        acquired++;
+      } else {
+        // Resident - and it must be marked as used by *this* step too. Only used_/busy slots are
+        // protected, so without this the acquires above (each evicting to make room, with the pool
+        // near-full) evict experts that this same chunk is about to read, and find() then returns
+        // -1 for an expert that was resident when the loop started.
+        sm_->reserve(slot);
+      }
     }
     sm_->sync_copies();
+  }
+  // Resolve every expert this chunk will touch before building the pointer tables: the tables must
+  // describe the slots that are resident at launch time, so any force-fit has to happen first.
+  {
+    int missing = 0, first = -1;
+    for (int e = 0; e < E; e++)
+      if (dev_cnt[e] > 0 && sm_->find(L.index, e) < 0) { missing++; if (first < 0) first = e; }
+    if (missing) {
+      int forced = 0, zeroed = 0;
+      for (int e = 0; e < E; e++) {
+        if (dev_cnt[e] <= 0 || sm_->find(L.index, e) >= 0) continue;
+        int slot = sm_->force_resident(L.index, e);
+        if (slot >= 0) {
+          sm_->reserve(slot);   // forcing evicts to make room: hold what it just won
+          forced++;
+        } else {
+          zeroed++;
+        }
+      }
+      // Re-count for the report. The first pass's `first` is stale once forcing has evicted
+      // something in the meantime, which is how a crash log ends up naming an expert that
+      // diag_expert() shows as perfectly resident.
+      int still = 0, still_first = -1;
+      for (int e = 0; e < E; e++)
+        if (dev_cnt[e] > 0 && sm_->find(L.index, e) < 0) {
+          still++;
+          if (still_first < 0) still_first = e;
+        }
+      fprintf(stderr, "[moe] L%d n=%d missing=%d forced=%d zeroed=%d still_missing=%d\n", L.index, n,
+              missing, forced, zeroed, still);
+      if (still) {
+        sm_->diag_expert(L.index, still_first);
+        fprintf(stderr,
+                "[moe] L%d n=%d DEGRADED: %d expert(s) served as zeros (first=%d) - their tokens "
+                "get a wrong MoE contribution\n",
+                L.index, n, still, still_first);
+      }
+    }
   }
   // pointer tables
   {
     static std::vector<const void*> host(9 * 288);
     for (int e = 0; e < E; e++) {
       int slot = sm_->find(L.index, e);
+      // A still-missing expert is pointed at the zero slab rather than left null: the kernel
+      // dereferences every entry for an expert with tokens, so null is an illegal access, and a
+      // zero-filled expert degrades the output instead of killing the server.
       const char* base = slot >= 0 ? sm_->slot_ptr(slot)
                                    : (dev_cnt[e] > 0 ? (const char*)sm_->zero_slab() : nullptr);
-      host[0 * E + e] = base ? base + moe_off_[0] : nullptr;
-      host[1 * E + e] = base ? base + moe_off_[1] : nullptr;
-      host[2 * E + e] = base ? base + moe_off_[2] : nullptr;
-      host[3 * E + e] = base ? base + moe_off_[4] : nullptr;
-      host[4 * E + e] = base ? base + moe_off_[5] : nullptr;
-      host[5 * E + e] = base ? base + moe_off_[6] : nullptr;
-      host[6 * E + e] = base ? base + moe_off_[8] : nullptr;
-      host[7 * E + e] = base ? base + moe_off_[9] : nullptr;
-      host[8 * E + e] = base ? base + moe_off_[10] : nullptr;
+      host[0 * E + e] = base ? base + moe_off[0] : nullptr;
+      host[1 * E + e] = base ? base + moe_off[1] : nullptr;
+      host[2 * E + e] = base ? base + moe_off[2] : nullptr;
+      host[3 * E + e] = base ? base + moe_off[4] : nullptr;
+      host[4 * E + e] = base ? base + moe_off[5] : nullptr;
+      host[5 * E + e] = base ? base + moe_off[6] : nullptr;
+      host[6 * E + e] = base ? base + moe_off[8] : nullptr;
+      host[7 * E + e] = base ? base + moe_off[9] : nullptr;
+      host[8 * E + e] = base ? base + moe_off[10] : nullptr;
     }
     HELIOS_CUDA_CHECK(cudaMemcpyAsync(w1.tables, host.data(), 9 * E * sizeof(void*),
                                       cudaMemcpyHostToDevice, s1));
-  }
-  // Fail fast if a needed expert has no resident slot: the kernel dereferences the table entries
-  // unconditionally, so a null pointer there is an illegal access instead of a clear error.
-  {
-    int missing = 0, first = -1;
-    for (int e = 0; e < E; e++)
-      if (dev_cnt[e] > 0 && sm_->find(L.index, e) < 0) { missing++; if (first < 0) first = e; }
-    if (missing) {
-      // Rare, pool-state dependent: force the experts resident rather than launching over null
-      // pointers. If that still fails, point them at a zeroed slab so the kernel reads zeros
-      // instead of faulting - a logged, graceful degradation instead of a crash.
-      int forced = 0, zeroed = 0;
-      for (int e = 0; e < E; e++) {
-        if (dev_cnt[e] <= 0 || sm_->find(L.index, e) >= 0) continue;
-        if (sm_->force_resident(L.index, e) >= 0) forced++;
-        else zeroed++;
-      }
-      if (forced || zeroed) {
-        fprintf(stderr, "[moe] L%d n=%d missing=%d forced=%d zeroed=%d\n", L.index, n, missing,
-                forced, zeroed);
-        sm_->diag_expert(L.index, first);
-        missing = 0;
-        for (int e = 0; e < E; e++)
-          if (dev_cnt[e] > 0 && sm_->find(L.index, e) < 0) missing++;
-      }
-      if (missing) {
-        fprintf(stderr, "[moe] L%d n=%d UNRESOLVABLE missing=%d first=%d\n", L.index, n, missing,
-                first);
-        abort();
-      }
-    }
   }
   HELIOS_CUDA_CHECK(cudaMemsetAsync(w1.y, 0, (size_t)n * 4096 * 4, s1));
   exl3::ExpertTables tb;
@@ -846,21 +865,19 @@ void Runner::moe_ffn(Layer& L, int n) {
       int slot = sm_->find(L.index, e);
       if (slot < 0) { fprintf(stderr, "[moe-dense] expert %d not resident\n", e); abort(); }
       const char* base = sm_->slot_ptr(slot);
-      exl3::GroupWords gw{(const uint16_t*)(base + moe_off_[0]), (const half*)(base + moe_off_[1]),
-                          (const half*)(base + moe_off_[2]), routed_mul1_};
-      exl3::GroupWords uw{(const uint16_t*)(base + moe_off_[4]), (const half*)(base + moe_off_[5]),
-                          (const half*)(base + moe_off_[6]), routed_mul1_};
-      exl3::GroupWords dw{(const uint16_t*)(base + moe_off_[8]), (const half*)(base + moe_off_[9]),
-                          (const half*)(base + moe_off_[10]), routed_mul1_};
+      exl3::GroupWords gw{(const uint16_t*)(base + moe_off[0]), (const half*)(base + moe_off[1]),
+                          (const half*)(base + moe_off[2]), static_cast<int>(0x83DCD12Du)};
+      exl3::GroupWords uw{(const uint16_t*)(base + moe_off[4]), (const half*)(base + moe_off[5]),
+                          (const half*)(base + moe_off[6]), static_cast<int>(0x83DCD12Du)};
+      exl3::GroupWords dw{(const uint16_t*)(base + moe_off[8]), (const half*)(base + moe_off[9]),
+                          (const half*)(base + moe_off[10]), static_cast<int>(0x83DCD12Du)};
       const int64_t* idx = w1.tsorted + off[e];
       glue::gather_rows(w1.x, idx, w1.dense_x, cnt, 4096, s1);
-      // Routed experts are 2-bit in this checkpoint (the fused call passes K_gate/K_up/K_down = 2);
-      // K here is the top-k count, not the bit width.
-      exl3::gemm(w1.dense_g, w1.dense_x, gw, cnt, 2048, 4096, kRoutedBits, true, s1, w1.dense_had);
-      exl3::gemm(w1.dense_u, w1.dense_x, uw, cnt, 2048, 4096, kRoutedBits, true, s1, w1.dense_had);
+      exl3::gemm(w1.dense_g, w1.dense_x, gw, cnt, 2048, 4096, expert.bits[0], true, s1, w1.dense_had);
+      exl3::gemm(w1.dense_u, w1.dense_x, uw, cnt, 2048, 4096, expert.bits[1], true, s1, w1.dense_had);
       glue::swiglu_clamp(w1.dense_g, w1.dense_u, w1.dense_a, (size_t)cnt * 2048, m_->cfg.swiglu_limit,
                          s1);
-      exl3::gemm(w1.dense_d, w1.dense_a, dw, cnt, 4096, 2048, kRoutedBits, true, s1, w1.dense_had);
+      exl3::gemm(w1.dense_d, w1.dense_a, dw, cnt, 4096, 2048, expert.bits[2], true, s1, w1.dense_had);
       glue::scatter_add_rows(w1.y, w1.dense_d, idx, w1.wsorted + off[e], cnt, 4096, s1);
       done_rows += cnt;
     }
@@ -873,7 +890,7 @@ void Runner::moe_ffn(Layer& L, int n) {
     // so run it there and order the following work with an event.
     exl3::moe_grouped(w1.x, w1.y, w1.ec, w1.tsorted, w1.wsorted, w1.moe_tg, w1.moe_tu,
                       w1.moe_ig, w1.moe_iu, tb, n, 4096, 2048, E, K, moe_plan_.max_tokens_per_expert,
-                      moe_plan_.concurrency, 2, 2, 2, false, true, m_->cfg.swiglu_limit,
+                      moe_plan_.concurrency, expert.bits[0], expert.bits[1], expert.bits[2], false, true, m_->cfg.swiglu_limit,
                       MOE_ACT_SILU, active, s1);
     HELIOS_CUDA_CHECK(cudaGetLastError());
   }
@@ -916,6 +933,18 @@ void Runner::moe_ffn(Layer& L, int n) {
 
 // ---------------------------------------------------------------- chunk driver
 
+void Runner::inject_images(int n, int pos) {
+  if (!images_) return;
+  for (const auto& image : *images_) {
+    const int first = std::max(pos, image.start);
+    const int last = std::min(pos + n, image.start + image.rows);
+    if (first >= last) continue;
+    HELIOS_CUDA_CHECK(cudaMemcpyAsync(c_->xh + (size_t)(first - pos) * image.hidden,
+        image.values.data() + (size_t)(first - image.start) * image.hidden,
+        (size_t)(last - first) * image.hidden * 2, cudaMemcpyHostToDevice, s0_stream()));
+  }
+}
+
 void Runner::run_chunk(int n, int pos, bool prefill) {
   // Hard context ceiling. The KV cache is position-addressed and sized to `cap`, so a chunk that
   // would run past it must never execute - writing there corrupts memory rather than failing
@@ -938,6 +967,7 @@ void Runner::run_chunk(int n, int pos, bool prefill) {
   cudaStream_t s = s0_stream();
   fprintf(stderr, "[runner] chunk n=%d pos=%d\n", n, pos);
   glue::embed_gather(m_->embed, w0.tokens, n, c_->xh, 4096, s);
+  inject_images(n, pos);
   glue::stream_expand(c_->xh, c_->streams, n, 4096, s);
   DBGSYNC(s, "embed/expand");
   for (int l = 0; l < m_->cfg.n_layers; l++) layer_step(m_->layers[l], n, pos, c_->streams);
@@ -1218,30 +1248,31 @@ bool Runner::bench_gemm(int max_m) {
 // Copy rate out of the RAM arena into GPU1 slots - isolates "how fast can we actually stream
 // experts" from everything else in the MoE path.
 bool Runner::bench_arena_copy(int n_slabs) {
+  const size_t slab_bytes = m_->expert_layouts.at(3).stride;
   Device& g1 = Engine::instance().gpu(1);
   DevGuard guard(g1.phys_idx());
   cudaStream_t dma = g1.stream(1);
   void* dst = nullptr;
-  HELIOS_CUDA_CHECK(cudaMalloc(&dst, m_->slot_stride));
+  HELIOS_CUDA_CHECK(cudaMalloc(&dst, slab_bytes));
   cudaEvent_t e0, e1;
   HELIOS_CUDA_CHECK(cudaEventCreate(&e0));
   HELIOS_CUDA_CHECK(cudaEventCreate(&e1));
   const int E = m_->cfg.n_expert;
   // warmup
-  HELIOS_CUDA_CHECK(cudaMemcpyAsync(dst, m_->slab(3, 0), m_->slot_stride, cudaMemcpyHostToDevice, dma));
+  HELIOS_CUDA_CHECK(cudaMemcpyAsync(dst, m_->slab(3, 0), slab_bytes, cudaMemcpyHostToDevice, dma));
   HELIOS_CUDA_CHECK(cudaStreamSynchronize(dma));
   HELIOS_CUDA_CHECK(cudaEventRecord(e0, dma));
   for (int i = 0; i < n_slabs; i++) {
     int e = i % E;
-    HELIOS_CUDA_CHECK(cudaMemcpyAsync(dst, m_->slab(3, e), m_->slot_stride, cudaMemcpyHostToDevice, dma));
+    HELIOS_CUDA_CHECK(cudaMemcpyAsync(dst, m_->slab(3, e), slab_bytes, cudaMemcpyHostToDevice, dma));
   }
   HELIOS_CUDA_CHECK(cudaEventRecord(e1, dma));
   HELIOS_CUDA_CHECK(cudaEventSynchronize(e1));
   float ms = 0;
   HELIOS_CUDA_CHECK(cudaEventElapsedTime(&ms, e0, e1));
-  double gb = (double)n_slabs * m_->slot_stride / 1e9;
+  double gb = (double)n_slabs * slab_bytes / 1e9;
   printf("[arena] %d slabs x %.2f MB from the RAM arena in %.1f ms = %.2f GB/s (%.3f ms/slab)\n",
-         n_slabs, m_->slot_stride / 1048576.0, ms, gb / (ms / 1000.0), ms / n_slabs);
+         n_slabs, slab_bytes / 1048576.0, ms, gb / (ms / 1000.0), ms / n_slabs);
   fflush(stdout);
   cudaFree(dst);
   return true;
@@ -1382,7 +1413,7 @@ void Runner::prefill(const std::vector<int>& ids) {
   // Chunk-major prefill (default, verified). The layer-major variant below streams each layer's
   // experts once per super-chunk instead of once per chunk (much less PCIe traffic for long
   // prompts) but still trips an illegal access inside the MoE path, so it stays opt-in.
-  if (getenv("HELIOS_LAYER_MAJOR") == nullptr) {
+  if (getenv("HELIOS_LAYER_MAJOR") == nullptr || (images_ && !images_->empty())) {
     // The KDA state one token before the prompt end is the one a *re-sent* request resumes from (its
     // prompt matches the resident history completely, and the last token is always re-run because the
     // caller needs its logits). So the last chunk stops one token short and that state is snapshotted;
@@ -1473,8 +1504,22 @@ void Runner::decode(const std::vector<int>& ids) {
 }
 
 std::vector<int> Runner::generate(const std::vector<int>& prompt, const GenParams& p,
-                                  const std::function<bool(int)>& on_token) {
+                                  const std::function<bool(int)>& on_token,
+                                  const std::vector<ImageEmbedding>& images) {
   if (prompt.empty()) return {};
+  for (const auto& image : images)
+    if (image.start < 0 || image.rows <= 0 || image.hidden != m_->cfg.hidden ||
+        (size_t)image.start + image.rows > prompt.size() ||
+        image.values.size() != (size_t)image.rows * image.hidden)
+      throw std::runtime_error("image embeddings do not match prompt positions");
+  // Token IDs alone cannot establish prefix equality when pixels differ.
+  if (!images.empty() || cached_image_) reset();
+  cached_image_ = !images.empty();
+  images_ = &images;
+  struct ClearImages {
+    const std::vector<ImageEmbedding>*& pointer;
+    ~ClearImages() { pointer = nullptr; }
+  } clear_images{images_};
   const int start = prefix_begin(prompt);
   if (start < (int)prompt.size())
     prefill(std::vector<int>(prompt.begin() + start, prompt.end()));
@@ -1486,7 +1531,7 @@ std::vector<int> Runner::generate(const std::vector<int>& prompt, const GenParam
   for (int i = 0; i < p.max_tokens; i++) {
     if (pos_ >= cap) break;          // no room left in the KV cache; reported as a length stop
     int tok = smp.sample(w0.host_logits, m_->cfg.vocab, p, recent);
-    if (tok == tk_->eos_id()) break;
+    if (tok == tk_->eos_id() && !p.ignore_eos) break;
     out.push_back(tok);
     if (getenv("HELIOS_MTP_TOKENS")) fprintf(stderr, "[tok] %d\n", tok);
     recent.push_back(tok);

@@ -1,0 +1,47 @@
+[
+  {
+    "case": "arithmetic",
+    "answer": "4",
+    "pass": true
+  },
+  {
+    "case": "translation",
+    "answer": "Bonjour",
+    "pass": true
+  },
+  {
+    "case": "SSE",
+    "answer": "The capital of France is **Paris**.",
+    "pass": true
+  },
+  {
+    "case": "image-red",
+    "answer": "Red",
+    "pass": true
+  },
+  {
+    "case": "image-blue",
+    "answer": "Blue",
+    "pass": true
+  },
+  {
+    "case": "image-red",
+    "answer": "Red",
+    "pass": true
+  },
+  {
+    "case": "image-nonsquare",
+    "answer": "Blue",
+    "pass": true
+  },
+  {
+    "case": "two-images",
+    "answer": "Red, blue",
+    "pass": true
+  },
+  {
+    "case": "text-after-image",
+    "answer": "4",
+    "pass": true
+  }
+]

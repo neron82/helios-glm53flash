@@ -6,3 +6,4 @@ src/cuda/*/build/
 .helios.census
 *.nsys-rep
 *.sqlite
+__pycache__/

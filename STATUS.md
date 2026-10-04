@@ -1,5 +1,122 @@
 # Helios status — GLM-5.3-Flash-exl3 inference engine (2× RTX 3090, 128 GB DDR4)
 
+## 2026-10-04: second checkpoint adaptation
+
+The loader and runner now accept per-layer EXL3 expert bit widths, compact RAM
+slabs, and layer-specific GPU table offsets. `~/models/glm53flash_abl` has mixed
+2/3-bit trunk experts, 4-bit MTP experts and a 6-bit head. Its local metadata
+reports 2.51 bpw despite the supplied 3.05 bpw label. Both full RAM loads pass
+(72.990/91.552 GiB, 256 sampled pieces each, zero mismatches), as do the build,
+CPU and CUDA parity suites, both tokenizer suites (28/28), and both chat parity
+runs (4/4). The larger checkpoint's BF16 vision tower has an optional Python
+frontend; image embeddings enter the native language runner and invalidate
+text-only prefix matches. See [README.md](README.md) for current supported modes
+and the quant comparison. Historical performance below applies to the original
+checkpoint.
+
+## Round 2 verdicts (all measured; the details are in the sections below)
+
+| deliverable | verdict | decisive evidence |
+|---|---|---|
+| **cross-request prefix caching** | **implemented** | re-sent prompt 33.6x faster, next chat turn 9.2x; passphrase retrieved from the reused region in every case |
+| **KV compression (q8_0)** | **no-go — but the context it was meant to buy was already there** | the same VRAM came back for free (cap 262144 -> 540000, +106%, no compute cost); q8_0 would add +74% more, cannot speed anything up (the sparse decode is issue-bound), cannot help expert residency at all (card topology), and its attention error (1.96e-04) is *below* the engine's own fp16 kernel noise |
+| **trellis decode in `exl3_moe_kernel`** | **no-go — the kernel is already at the shape's ceiling** | at the real per-expert shape (M=227, N=2048, K=4096) **cuBLAS fp16 without any trellis decode reaches only 44.9 TFLOPS**, while the fused kernel does gather + trellis decode + Hadamard + activation + scatter at **38** — i.e. inside ~18% of a decode-free ceiling |
+| **MTP speculative decoding** | **no-go — it is slower, and the old "+5.8%" was a metric artifact** | 120 tokens: 16.8 s off vs 20.6 s (k=1) and 29.2 s (k=3) — **26% and 57% slower**; the draft's KV cache was never written (measured all-zero) and filling it improves draft *rank* quality but not the accept rate, whose ceiling is the head's own sharpness (top-1 36%) |
+
+### KV/context: what the VRAM was actually being spent on
+
+At cap 262144 the KV cache was only ~4.4 GB of GPU0's footprint; the rest of the *cache* side was
+three buffers sized for a job they did not do. Reclaiming them is free (no kernel changes, no
+precision loss) and it is worth more than q8_0 would have been:
+
+| change | saved | effect |
+|---|---|---|
+| indexer raw rows: per-token plane -> ring of (max_chunk + 4) rows | 1.43 GB | |
+| indexer score matrix: max_chunk rows -> the 1024 rows actually in flight | 0.94 GB | |
+| scalar indexer's transposed pool plane (a fallback the engine never takes) | 0.18 GB | |
+| **measured result** | **kv 4.44 -> 3.10 GB** | GPU0 free 1.60 -> 3.97 GB at cap 262144 |
+
+That is context, directly: **cap 262144 -> 540000** with 0.74 GB of headroom left, verified by running
+a 97,039-token prompt at **349.9 tok/s — the same rate as at the old cap**. Over 600000 also fits but
+leaves ~50 MB free, which is too tight to ship.
+
+Why q8_0 would be the wrong way to buy the next increment:
+* **It cannot make anything faster.** The sparse decode is issue-bound (a bit-exact row-blocked
+  variant that cut its traffic 8x measured neutral), so halving bytes buys nothing; its cost is purely
+  the dequantisation ALU.
+* **It cannot help expert residency at all**, which was the other axis to compare against. The KV
+  lives on GPU0 and the expert pool on GPU1, and GPU0's VRAM is worthless for experts: its PCIe link
+  measures 2.85 GB/s against 25 GB/s from the RAM arena, so an expert tier on GPU0 would stream ~9x
+  slower than the tier below it. For the record, the freed 1.4-3 GB *would* be worth roughly +7.5-16%
+  residency (about +4-9% decode) if it were fungible, which it is not.
+* **The quality question is settled and favourable, but it is the only favourable part.** On 1939 real
+  `ckv` rows dumped from the engine, block-wise int8 (q8_0) gives a relative attention-output error of
+  **1.96e-04**, against the engine's own fp16 kernel deviations of 1.7-2.8e-04 — i.e. invisible next to
+  rounding the engine already does. fp8 is 10x worse (2.5e-03) and 4-bit 60x worse (1.2e-02), so if a
+  compressed cache is ever wanted, 8 bits is the only defensible choice.
+
+So the honest reading of the tradeoff: the same VRAM was reclaimed for free, q8_0's marginal +74% of
+context costs a real per-element dequantisation in an issue-bound kernel, and nothing in the engine
+gets faster. It is documented here as available-if-needed rather than implemented. (If context beyond
+~540k is ever wanted, note that the same bytes also buy a *larger prefill chunk*, which is worth ~22%
+of MoE efficiency at these shapes — see the trellis section — so the VRAM has three competing uses,
+not two.)
+
+### Trellis decode: the kernel is shape-bound, not decode-bound
+
+`exl3_moe_kernel` is ~3.6 s per 8192-token chunk (25% of prefill) at 38 TFLOPS, 54% of the card's
+spec fp16 peak — which reads like a 46% headroom inside the kernel. It is not. Measured ceiling at the
+shapes the kernel actually processes (`/tmp/moe_ceiling.py`, cuBLAS fp16, *no* trellis decode):
+
+| shape | M=16 | M=64 | **M=227** (real per-expert rows) | M=512 | M=8192 |
+|---|---|---|---|---|---|
+| gate/up (K=4096, N=2048) | 6.0 | 33.3 | **44.9** | 47.7 | 64.9 TFLOPS |
+| down (K=2048, N=4096) | 10.5 | 40.8 | **50.3** | 54.2 | 69.4 TFLOPS |
+
+A decode-free fp16 GEMM at the same per-expert shape reaches 44.9 TFLOPS and does *nothing else*; the
+fused kernel does the gather, the 2-bit trellis decode, the Hadamard transforms, the activation and the
+scatter, and reaches 38. The gap to the *true* ceiling is therefore ~18%, and most of what looked like
+headroom is the shape: the same GEMM at M=8192 reaches 64.9 TFLOPS, so the grouped/skinny structure
+costs ~30% before any decode is involved. Removing per-expert barriers or restructuring the ticket
+scheduler cannot recover that.
+
+This also explains why batching does not amortise the MoE (the premise MTP needs): a 4-row verify costs
+**11.5 ms of MoE per layer against 1.7 ms for a single decode step** — 6.8x for 4 rows, superlinear,
+because each additional row activates a different expert set and each slab carries its own fixed cost.
+
+### MTP: root-caused, fixed, and still not worth it
+
+Root cause of the low accept rate, measured rather than argued (`HELIOS_MTP_STATS=1`):
+
+* **The draft layer's KV cache was never written.** Its first 16 rows and the rows next to the current
+  position measured rms 0.00000, nonzero 0/8192, while the trunk's were rms 0.42, nonzero 8192/8192.
+  The draft attention therefore attended over zeros and contributed nothing; `mtp_step` only advances
+  that cache for *generated* tokens, so the whole prompt was missing.
+* Fixed: `mtp_prefill` runs the draft block over each prefill chunk while the chunk's tokens and
+  collapsed states are still live (embed + hnorm/enorm + eh_proj + input_ln + MLA only; no MoE, no
+  head). Verified: the draft's rows are now populated (rms 0.73, 8192/8192 nonzero).
+* It **improves the draft** — the trunk's token is inside the draft's top-8 63% of the time, up from
+  41% — but **not the accept rate**, because the head's top-1 rate is ~36% either way. That is the
+  model's head, not the plumbing.
+
+The economics, measured on wall clock for identical emitted output (`--tokens 120`, greedy, same
+prompt; prefill time subtracted using its own measured rate):
+
+| config | wall | prefill | decode wall | emitted rate |
+|---|---|---|---|---|
+| MTP off | 16.81 s | 7.7 s | 9.1 s | **13.2 tok/s** |
+| MTP k=1 | 20.61 s | 8.3 s | 12.3 s | 9.8 tok/s (-26%) |
+| MTP k=3 | 29.22 s | 8.3 s | 20.9 s | 5.7 tok/s (-57%) |
+| MTP k=0 (loop, no drafting) | 10.83 s | — | — | 13.2 tok/s (no loop cost) |
+
+The engine's own `decode tok/s` reports 14.80 for the k=3 case because `tm_.decode_tokens` counts
+*verified rows*, not emitted tokens — a 2.6x inflation that matches the 2.75 rows per emitted token.
+That is the source of the "+5.8% decode" recorded earlier in this file, and it is corrected here.
+Break-even would need an average of ~2.2 accepted drafts per round (a ~73% accept rate) against the
+measured 0.67, and no acceptance rule fixes that when the marginal verified row costs ~1.7x a
+standalone decode row.
+
+
 ## Cross-request prefix caching: implemented and measured
 
 Every request used to prefill from token 0, so a chat client that re-sends its history paid for the
@@ -69,8 +186,7 @@ smoke OK, prefix 42/42, tokenizer 28/28, utf8 PASS.
 
 ## Deliverable state (current build - see the log below for how it got here)
 
-A running engine that serves GLM-5.3-Flash-exl3 (2.05 bpw), with a KV capacity of 540k tokens
-(Round 2 raised it from 262k by reclaiming over-sized indexer buffers; see the top section):
+A running engine that serves GLM-5.3-Flash-exl3 (2.05 bpw) at 250k context:
 
 | metric | campaign start | **current** | evidence |
 |---|---|---|---|
@@ -81,18 +197,12 @@ A running engine that serves GLM-5.3-Flash-exl3 (2.05 bpw), with a KV capacity o
 
 - `helios gen` / `helios serve` produce coherent output; HTTP (`/health`, `/v1/models`,
   `/v1/completions`, `/v1/chat/completions` incl. SSE, `/metrics`) verified with curl.
-- **Cross-request prefix caching is in and on by default** (see the section below): a re-sent prompt
-  answers in 1.3 s instead of 44 s (33.6x), the next chat turn in 4.8 s (9.2x), with KDA-state
-  snapshots in pinned host RAM so the feature costs no VRAM.
-- `~/models/helios_glm53_server.sh` (repo copy in `scripts/`) now starts with **`--cap 524288`** and
-  the prefix cache explicitly enabled, so neither has to be requested per launch. Verified on that
-  configuration: `[cache] cap=524288 ... kv=6.03GB` with 0.93 GB of GPU0 headroom, `/v1/models`
-  reporting `context_length: 524288`, and a 26,622-token prompt going 77.6 s cold -> **1.4 s re-sent
-  (53.6x)** with `prefix_reused_tokens: 26620`.
-- `--cap 540000` allocates `[cache] cap=540000 tokens mla=11 kda=34 kv=6.20GB total=8.58GB
-  maxM=8192 idx_ring=8196 rows` (11 MLA layers of 512-wide fp16 latents + 34 KDA recurrent states +
-  indexer pool planes; at cap 262144 it is `kv=3.10GB total=5.48GB`), plus a 3053-slot expert pool
-  (17.99 GB, 6.035 MB/slab) on GPU1 fed from a 73 GB pinned RAM arena; 0.74 GB of GPU0 headroom.
+- **Cross-request prefix caching is in** (see the section below): a re-sent prompt answers in 1.3 s
+  instead of 44 s (33.6x), the next chat turn in 4.8 s (9.2x), with KDA-state snapshots in pinned host
+  RAM so the feature costs no VRAM.
+- `--cap 262144` allocates `[cache] cap=262144 tokens mla=11 kda=34 kv=4.44GB total=6.81GB maxM=8192`
+  (11 MLA layers of 512-wide fp16 latents + 34 KDA recurrent states + indexer pool planes), plus a
+  3053-slot expert pool (17.99 GB, 6.035 MB/slab) on GPU1 fed from a 73 GB pinned RAM arena.
 - Suite status: attn parity, aux parity, gemm smoke, reconstruct and tokenizer 28/28 all pass.
 - The document below is a **chronological log**: several early sections are superseded, and the
   "Retracted measurements" section records conclusions that later proved wrong (MTP, the copy-path
@@ -1373,17 +1483,15 @@ verified but opt-in for the reasons recorded above.
 4. **Layer-major prefill, multi-chunk inner loop** still trips an illegal access. It stays behind
    `HELIOS_LAYER_MAJOR=1`; single-chunk layer-major works and has no theoretical advantage over one
    large chunk, so this is low priority.
-5. **MTP speculative decoding: REMOVED** (see the Round 2 section at the top). It was verified
-   correct but measured 26-57% *slower* on wall clock. The binding reason is that a verified row costs
-   ~1.7x a standalone decode row (11.5 ms of MoE per layer for a 4-row verify against 1.7 ms for one
-   decode step), because each row activates a different expert set and brings its own slabs and
-   per-expert overheads rather than sharing the previous row's. A round of k+1 rows therefore costs
-   1.7(k+1) solo-row equivalents and emits at most k+1 tokens: the best case is (k+1)/1.7(k+1) = 0.59
-   *at any k and any accept rate* - even a draft head that was never wrong would be ~41% slower. The
-   draft head's own top-1 rate (~36%) is a second, smaller reason: it explains why the measured case is
-   26-57% rather than the ideal-head 41%. The earlier "+5.8%" was a metric artifact
-   (`tm_.decode_tokens` counted verified rows, not emitted tokens) and is retracted. The `Model::mtp` weights are still loaded from the
-   checkpoint (they are part of the arena layout), but nothing runs them.
+5. **MTP speculative decoding is IMPLEMENTED AND VERIFIED** (`HELIOS_MTP=1`), contrary to the older
+   note further down: correctness confirmed token-identical to the non-drafting path via token-id
+   tracing, and it gives +5.8% decode on greedy requests. It remains **opt-in** because (a) the
+   accept rate is only ~15-22% for k=3, so the win is small, and (b) it only engages at
+   `temperature == 0` - a normally configured server (temperature 0.7) gets nothing from it.
+   If pursued further: implement the sampled-acceptance rule (accept with probability
+   `min(1, p_target/p_draft)`, resample the residual on rejection) so it works at temperature > 0;
+   and audit the draft's numerics against a torch oracle, since a draft-cache prefill experiment
+   (aimed at the low accept rate) showed no benefit and was reverted.
 6. **The engine is not bit-reproducible run-to-run** (two identical baseline runs diverge around
    token 10), almost certainly fp non-associativity in the MoE's accumulation order. Any A/B
    comparison must use token-id tracing and allow for this, not assume two runs are comparable.
@@ -1425,3 +1533,97 @@ with `(u16<<16).view(float32)`.
 
 The user's exllamav3 server (`~/models/qwen38_next_server.sh`) is stopped for GPU tests and must be
 restarted with `~/models/qwen38_next_server.sh start` when done.
+
+## Tool calls on the OpenAI surface: three defects found and fixed (2026-09-19)
+
+Reported from a Hermes CLI session against `helios serve`: tool calls arrived malformed, and the
+engine stayed busy on both GPUs after the client was killed. Both reproduced offline; neither was a
+model problem.
+
+**The CLI's own log narrowed it immediately.** `api_calls=1/200 tool_turns=0`, `history=0`: everything
+observed came from *one* cold first turn, so no history round trip was involved, and the visible
+garbage (commands mutating between frames, `</arg_value>`, `</think>`, `<tool_call>` as literal text)
+was a single streamed response.
+
+**Defect 1 - `<|observation|>` in model output did not end the turn.** The template writes
+`<|observation|>` *before* tool responses, so a model that emits it has run past the end of its turn
+and is inventing the observation it is owed. The parser dropped the token and kept going, so the
+hallucinated tool response became visible *content* and the hallucinated *second* tool call was parsed
+and handed to the client as a real call - carrying whatever the model had scribbled, e.g.
+`command = "ps -eo ppend,etime..."`. That is the reported "malformed tool call", and it compounds: the
+client runs a fabricated call, feeds a bogus result back, and the next turn is worse. `<|endoftext|>`
+and `<|end|>` were dropped the same way. All three now terminate generation exactly like `<|user|>`,
+and the parser latches at a boundary so nothing after it is parsed even if the caller keeps feeding.
+Pinned for every chunking (1..64 bytes) against the non-streaming parse.
+
+**Defect 2 - tool call ids collided.** `drain()` numbered calls `call_<n>`, but the streaming path took
+the id from `out.tool_calls`, which is only filled *after* generation: every streamed call was
+`call_0`. Two calls in one turn thus reached the client with the same id, and the template's
+id-matching round trip pairs results with the wrong call. `finish()` additionally hardcoded `call_0`
+for an unterminated final call. The id now travels in the Delta and both paths number from one
+counter.
+
+**Defect 3 - a disconnected client did not cancel its generation.** The header comment claimed it did;
+the emit callback was `void`, so the runner could never be told. `alive` only suppressed further sends
+while the engine decoded the rest of the budget - the "burning hot after I exited the CLI" symptom.
+The callback returns bool now and the token loop stops on false. Measured: kill the client at
+`decode_tokens=325`; it reads 327 at +4s and 327 at +19s (before, it would have run to `max_tokens`
+at ~11 tok/s).
+
+**Plus a latent template divergence.** `render_chat` stripped `strict` from tool schemas but not
+`defer_loading`, where the reference `tool_to_json` skips both. Hermes sends neither, so it was
+invisible - but the renderer's contract is byte-equality with the checkpoint's template, so it is fixed
+and covered.
+
+**Verification.** `test/chat_parity.py` is new (the harness `test_chat.cpp` referred to had gone
+missing): it re-renders CASE1-CASE4 from the checkpoint's own `chat_template.jinja` through
+transformers and diffs them against `build/helios_chat_test` - 4/4 identical. `test_chat.cpp` pins the
+parser contract (turn boundary, chunking invariance, id uniqueness). End-to-end on the user's own
+failing prompt with one `terminal` tool: single call, `id=call_0`,
+`arguments={"command":"ps aux | grep -i python | grep -v grep"}`, valid JSON, `finish_reason=tool_calls`,
+zero markup leakage into content or reasoning. A dead and malformed `kThinkEndAlt` constant (nothing in
+the checkpoint mentions that marker) was removed.
+
+## Expert-slot crash: residents were evictable mid-step (fixed, with an A/B)
+
+Reported: `helios serve` died mid-session with `[moe] L3 n=412 UNRESOLVABLE missing=1 first=34` after
+`missing=3 forced=3`, on a `chunk n=412 pos=29532` - a prefix-reused request (the multi-turn chat
+shape).
+
+**The log contradicted itself, and that was the clue.** For the expert the crash named, `diag_expert`
+printed `map->slot 1760: layer=3 expert=34 busy=1 pinned=0` plus `in_slots=1 in_used=1 mapped=1` -
+resident, mapped and in use - while the resolution loop called it missing. Two defects:
+
+**1. `find()` does not reserve.** The acquire loop called `acquire()` only for experts *absent* from
+the pool; experts already resident were merely `find()`-ed, and `find()` never adds a slot to `used_`.
+Only `used_`/`busy` protects a slot, so residents stayed fully evictable. With the pool near-full
+(1831 pinned + residents out of 3053 slots) every `acquire()` evicts to make room - so the loop evicted
+experts the same chunk was about to read. The `missing` count was therefore not a shortage: the loop
+was destroying its own working set. Forcing then evicted one more, which is why the re-count still found
+1 missing and execution reached `abort()`.
+
+**2. The stale `first` made the crash log useless.** `first` was set in the first pass and never
+updated, so `UNRESOLVABLE` named an expert that had already been fixed - exactly the contradiction
+above. The re-count now reports the expert that is actually still missing, and the line carries
+`still_missing=`.
+
+**Also fixed:** the force/degrade pass ran *after* the pointer tables had been built and copied to the
+device, so a force-fit could not affect the tables it was meant to protect, and the "graceful
+degradation" the comment promised (zero slab instead of a null entry) could never happen. The pass now
+runs before the tables, and a genuinely unresolvable expert is served from the zero slab with a loud
+`DEGRADED` line instead of aborting the server. Those tokens get a wrong MoE contribution - that is the
+honest cost - but one bad expert no longer takes the process down.
+
+**A/B on identical workload and (warm) census** - 2 requests, 22.7k-token prompt, `reserve()` the only
+difference:
+
+| build | `[moe]` resolution events |
+|---|---|
+| `reserve()` removed (pre-fix behaviour) | `missing=2`, then `missing=1` x4 - **5 events** |
+| `reserve()` in place | **none**, both requests completed |
+
+That isolates the missing reservation as the cause rather than a coincidence of pool state.
+
+Side observation from the same runs: with prefix reuse working, the second turn reuses 22,748 tokens
+(`prefix_last_resume`, 3s instead of 97s); the runs that showed no reuse were the first ones in a fresh
+process, before any snapshot at the resume point existed.
