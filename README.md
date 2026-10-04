@@ -51,7 +51,7 @@ GLM-5.3-Flash as configured in this checkpoint:
 | context | `max_position_embeddings` = 1,048,576 (262,144 allocated here) |
 | weights on disk | 85.13 GB across 12 safetensors shards |
 
-Roughly half the layers are linear-attention and half are MLA, which is why the engine has two
+The trunk has 34 linear-attention layers and 11 MLA layers, so the engine has two
 completely separate attention paths and a hybrid KV cache (per-position latents for MLA, a fixed
 recurrent state for KDA).
 
@@ -335,37 +335,48 @@ starts cold.
 
 ### Mixed-quant comparison — 2026-10-04
 
-Pre-push validation: one cold request per cell, identical exact token-ID prompts,
-`--cap 16384 --chunk 8192 --prefix-snap-mb 0`, greedy generation, no saved census.
-`--ignore-eos` forces the requested output count for timing; normal EOS-respecting
-text and image requests were tested separately. Load/pin time is excluded. Decode
-counts 255 or 511 forward steps for 256 or 512 emitted tokens because prefill
-already supplies the first token's logits.
+Final sweep on the fresh checkout, build `7703158`: **three repeats per cell,
+medians below (24 successful runs)**. Each run loads a fresh model process with
+identical exact token-ID prompts, `--cap 16384 --chunk 8192 --prefix-snap-mb 0`,
+greedy sampling, and no saved expert census. `--ignore-eos` forces the requested
+output count for timing; normal EOS-respecting text and image requests were
+validated separately. Load/pin time and vision preprocessing are excluded.
+Decode counts 255 or 511 forward steps for 256 or 512 emitted tokens because
+prefill already supplies the first token's logits.
 
 | Prefill | Generated | Original prefill tok/s | Original decode tok/s | Larger prefill tok/s | Larger decode tok/s |
 |---|---|---|---|---|---|
-| 4096 | 256 | 313.5 | 16.39 | 303.2 | 12.36 |
-| 4096 | 512 | 312.9 | 15.95 | 303.0 | 12.33 |
-| 8192 | 256 | 347.1 | 15.78 | 344.8 | 12.19 |
-| 8192 | 512 | 348.8 | 16.06 | 344.4 | 11.92 |
+| 4096 | 256 | 313.0 | 16.18 | 302.5 | 12.31 |
+| 4096 | 512 | 312.8 | 16.16 | 302.6 | 12.42 |
+| 8192 | 256 | 348.1 | 16.02 | 344.6 | 12.45 |
+| 8192 | 512 | 348.1 | 15.95 | 344.4 | 12.33 |
 
-The larger checkpoint is 0.7–3.3% slower in prefill and 22.7–25.8% slower in decode
-on this grid. Its arena holds 25.4% more expert data and the same GPU pool fits
-2034 slots rather than 3051. Text generation, SSE, color recognition, non-square
-images, ordered multiple images, OCR, changing-image cache invalidation and text
-after images all passed. Both quant loaders report zero mismatches in 256 RAM
-samples and 507 device tensors. All six CTest suites and the aux/attention parity
-executables pass; tokenizer vectors pass 28/28 and chat parity 4/4 for each quant.
+Across this grid the larger quant's prefill rate is within **3.4%** of the
+original, while decode is **22.3–23.9% slower**. Its compact
+arena contains 25.4% more expert data and the same GPU pool fits 2034 slots rather
+than 3051. All runs produced the exact requested counts with no degraded MoE
+resolution or tensor mismatches. These medians confirm the initial acceptance
+sweep's comparable prefill and expected decode slowdown.
 
-Raw measurements: [pre-push JSON](bench/results/prepush-2026-10-04.json).
-A final sweep on the fresh checkout follows consolidation; these initial results
-establish the acceptance condition for publishing the adaptation.
+The fresh build passed all six CTest suites, aux/attention parity, both tokenizer
+suites (28/28) and both local Jinja chat-template comparisons (4/4). Live checks
+passed arithmetic, translation, text SSE, red/blue/red image changes, non-square
+images, ordered multiple images, OCR, text after images and streamed image
+responses. Unsupported URLs and malformed base64 return HTTP 400. Both quant
+loaders report zero mismatches in 256 RAM samples and 507 device tensors.
+
+[Final raw measurements](bench/results/final-2026-10-04.json),
+[full logs and exact prompts](bench/results/final-2026-10-04-logs.tar.gz),
+[initial acceptance sweep](bench/results/prepush-2026-10-04.json),
+[fresh text/image responses](bench/results/fresh-generation-2026-10-04.json), and
+[image streaming/error checks](bench/results/fresh-image-stream-errors-2026-10-04.json).
+The original logs also remain at `/tmp/helios-quant-final/` on the reference host.
 
 ```bash
 ~/shared-venv-gpu/bin/python bench/quant_sweep.py --repeats 3 --output /tmp/helios-quant-sweep
 ```
 
-**End to end.** Both rows are the same build on the reference system:
+**Original-checkpoint history.** These workloads used the original quant on the reference system:
 
 | workload | total | prefill | decode |
 |---|---|---|---|

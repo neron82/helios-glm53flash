@@ -1,0 +1,33 @@
+[
+  {
+    "case": "remote-url",
+    "status": 400,
+    "response": {
+      "error": {
+        "message": "image_url must be a base64 data:image/... URL",
+        "type": "invalid_request_error",
+        "param": null,
+        "code": null
+      }
+    },
+    "pass": true
+  },
+  {
+    "case": "bad-base64",
+    "status": 400,
+    "response": {
+      "error": {
+        "message": "invalid image base64",
+        "type": "invalid_request_error",
+        "param": null,
+        "code": null
+      }
+    },
+    "pass": true
+  },
+  {
+    "case": "image-SSE",
+    "answer": "Blue",
+    "pass": true
+  }
+]

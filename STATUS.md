@@ -14,6 +14,12 @@ text-only prefix matches. See [README.md](README.md) for current supported modes
 and the quant comparison. Historical performance below applies to the original
 checkpoint.
 
+Final fresh-checkout verification: all kernel/CPU suites and live text/image
+checks pass. The final grid has three repeats of every 4096/8192 × 256/512 cell
+for both quants (24 valid runs); median prefill stays within 3.4% of the
+original, with 22.3–23.9% slower decode. Raw results and logs are in
+`bench/results/`, with the table and optional vision dependencies in the README.
+
 ## Round 2 verdicts (all measured; the details are in the sections below)
 
 | deliverable | verdict | decisive evidence |
