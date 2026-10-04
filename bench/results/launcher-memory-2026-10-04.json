@@ -1,0 +1,14 @@
+{
+  "context_tokens": 262144,
+  "chunk_tokens": 4096,
+  "kv": "fp16",
+  "mtp": false,
+  "vision": true,
+  "gpu_peak_total_used_mib": [
+    16828,
+    21154
+  ],
+  "sampling_interval_seconds": 1,
+  "samples": 120,
+  "generation_smoke_exit_code": 0
+}

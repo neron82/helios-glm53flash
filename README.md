@@ -194,19 +194,34 @@ prompt re-sent answers in **1.4 s (53.6×)** with the retrieval intact — the e
 ### Larger quant and image input
 
 ```bash
-MODEL_DIR="$HOME/models/glm53flash_abl" ./scripts/helios_glm53_server.sh start
+./scripts/helios_glm53flash_abl_server.sh start
+# Optional: keep a standalone launcher alongside the model directories.
+cp ./scripts/helios_glm53flash_abl_server.sh "$HOME/models/"
+# $HOME/models/helios_glm53flash_abl_server.sh start|stop|restart|status
 # Or start a smaller-context server directly:
 HELIOS_VISION_PYTHON="$HOME/shared-venv-gpu/bin/python" \
   ./build/helios serve "$HOME/models/glm53flash_abl" --cap 16384 --chunk 2048
 ```
+
+The abliterated-model launcher defaults to **262,144 tokens of context**, a 4,096-token prefill
+chunk, vision enabled through `~/shared-venv-gpu/bin/python`, and both GPUs (`CUDA_VISIBLE_DEVICES=0,1`).
+It uses **fp16 KV with MTP off**: compressed KV and speculative MTP decoding are not
+implemented in the current Helios runner. The smaller chunk leaves GPU0 headroom for the
+vision frontend. It checks the vision dependencies and available GPU memory before loading,
+and uses separate PID/log files from the original-model launcher. `--help` lists overrides;
+the copied script finds the engine in `~/projects/new_engine/helios-glm53flash` by default.
 
 For images, install the packages in `requirements-vision.txt`: `torch`, `transformers` with `Glm5NextVisionModel` (5.16.1 was tested),
 `safetensors`, `numpy`, and `Pillow` in the interpreter selected by `HELIOS_VISION_PYTHON`
 (default: `python3`). Text-only requests need none of these packages. The helper loads only the
 BF16 vision tower on the slow-link GPU and releases it before native generation. It preserves
 aspect ratio, pads to patch alignment, applies the checkpoint's normalization and inserts the
-resulting embeddings at image-token positions. Reserve GPU0 headroom for the vision tower;
-the smaller-context image example above was validated at cap 16384 and chunk 2048.
+resulting embeddings at image-token positions. Reserve GPU0 headroom for the vision tower.
+The new launcher was tested with cap 262144 and chunk 4096 allocated: all ten text, streaming,
+image-color, multi-image, and OCR smoke checks passed; GPU0's total device usage peaked at
+16,828 MiB (sampled once per second). See `bench/results/launcher-generation-2026-10-04.json`
+and `bench/results/launcher-memory-2026-10-04.json`. The smaller-context image example above
+was also validated at cap 16384 and chunk 2048.
 Image requests reset prefix reuse because identical
 placeholder tokens can represent different pixels.
 
@@ -483,7 +498,7 @@ Compressing the KV to q8_0 was evaluated and **not implemented**, for three meas
   comparison must compare token IDs and allow for this rather than assume two runs are comparable.
 - **Reasoning defaults to `high` rather than the model's `max`** (see above); an unrecognised
   `reasoning_effort` in a request falls back to the server default rather than being coerced to `max`.
-- **MTP speculative decoding is a net loss and is retained only as an opt-in experiment.** Measured
+- **The current runner has no MTP speculative decoding path.** Earlier experiments were a net loss. Measured
   on wall clock for identical output (120 tokens, greedy): 16.8 s with MTP off, 20.6 s at k=1, 29.2 s
   at k=3 — 26% and 57% slower. The binding reason is that a verified row costs ~1.7× a standalone
   decode row (a 4-row verify spends 11.5 ms of MoE per layer against 1.7 ms for one decode step),
