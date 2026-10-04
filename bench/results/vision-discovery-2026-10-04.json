@@ -1,0 +1,49 @@
+{
+  "server_model": {
+    "id": "glm-5.3-flash-exl3",
+    "object": "model",
+    "created": 0,
+    "owned_by": "helios",
+    "root": "glm-5.3-flash-exl3",
+    "max_tokens": 32768,
+    "context_length": 262144,
+    "supports_vision": true,
+    "capabilities": [
+      "completion",
+      "function_calling",
+      "reasoning",
+      "vision"
+    ],
+    "reasoning_effort": "high"
+  },
+  "frontend_model": {
+    "capabilities": [
+      "completion",
+      "function_calling",
+      "reasoning",
+      "vision"
+    ],
+    "context_length": 262144,
+    "created": 0,
+    "id": "glm-5.3-flash-exl3",
+    "max_tokens": 32768,
+    "object": "model",
+    "owned_by": "helios",
+    "reasoning_effort": "high",
+    "root": "glm-5.3-flash-exl3",
+    "supports_vision": true
+  },
+  "attachment_button": {
+    "disabled": false,
+    "style": {
+      "opacity": "1"
+    },
+    "title": "Attach image"
+  },
+  "pass": true,
+  "image_through_frontend": {
+    "answer": "Blue",
+    "stream_complete": true,
+    "pass": true
+  }
+}

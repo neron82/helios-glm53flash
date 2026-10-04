@@ -32,6 +32,7 @@ public:
   int pos() const { return pos_; }
   int context_cap() const { return c_ ? c_->cap() : 0; }
   const std::string& model_directory() const { return m_->directory; }
+  bool supports_vision() const { return m_ && supports_vision_input(m_->shards); }
 
   // ---- cross-request prefix cache ----
   // The KV, indexer and pool planes are position-addressed and never cleared between requests, so a

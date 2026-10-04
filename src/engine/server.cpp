@@ -217,6 +217,7 @@ int run_server(Runner& runner, Tokenizer& tk, const std::string& host, int port,
             default_reasoning_effort.c_str());
   }
   g_ctx_cap = runner.context_cap();
+  const bool supports_vision = runner.supports_vision();
   static std::mutex gen_mu;          // one generation at a time (single-sequence engine)
   static std::atomic<uint64_t> served{0};
 
@@ -232,9 +233,14 @@ int run_server(Runner& runner, Tokenizer& tk, const std::string& host, int port,
     res.set_content("{\"status\":\"ok\"}", "application/json");
   });
 
-  srv.Get("/v1/models", [](const httplib::Request&, httplib::Response& res) {
+  srv.Get("/v1/models", [supports_vision](const httplib::Request&, httplib::Response& res) {
     // Advertise the limits as well: clients that read them can size their own request controls
     // instead of guessing, and `max_tokens` here is what an omitted request field will use.
+    // Model Cabinet and other clients use these fields to enable image attachments.
+    // Keep capabilities nonempty on text-only checkpoints so clients do not fall back
+    // to assuming that the checkpoint's unsupported EXL3 vision tower is usable.
+    json capabilities = json::array({"completion", "function_calling", "reasoning"});
+    if (supports_vision) capabilities.push_back("vision");
     json j{{"object", "list"},
            {"data", json::array({{{"id", kModelId},
                                   {"object", "model"},
@@ -243,6 +249,8 @@ int run_server(Runner& runner, Tokenizer& tk, const std::string& host, int port,
                                   {"root", kModelId},
                                   {"max_tokens", g_opts.default_max_tokens},
                                   {"context_length", g_ctx_cap},
+                                  {"supports_vision", supports_vision},
+                                  {"capabilities", capabilities},
                                   {"reasoning_effort", g_opts.default_reasoning_effort}}})}};
     res.set_content(j.dump(), "application/json");
   });
@@ -321,6 +329,10 @@ int run_server(Runner& runner, Tokenizer& tk, const std::string& host, int port,
     std::string err;
     if (!parse_chat(body, req, err)) { error_response(res, 400, err, "invalid_request_error"); return; }
     if (!req.image_urls.empty()) {
+      if (!supports_vision) {
+        error_response(res, 400, "this checkpoint has no supported dense vision tower", "invalid_request_error");
+        return;
+      }
       std::lock_guard<std::mutex> lock(gen_mu);
       for (size_t i = 0; i < req.image_urls.size(); ++i) {
         ImageEmbedding image;

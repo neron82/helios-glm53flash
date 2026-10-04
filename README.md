@@ -236,7 +236,14 @@ Send `/v1/chat/completions` a content array such as:
 
 Multiple still images are supported. Image URLs must contain base64 data (up to 24 MiB encoded);
 remote URLs, videos and the original checkpoint's EXL3-quantized vision tower are rejected with a
-clear error. The image path currently starts a vision helper for every image, so its setup latency
+clear error. `/v1/models` advertises `supports_vision: true` and a `vision` entry in `capabilities`
+for checkpoints with a supported dense tower, enabling image attachments in Model Cabinet
+(`model-chat-ui`) and other clients. The original checkpoint reports `supports_vision: false`
+and only text capabilities. Detection reads tensor headers without loading the vision tower.
+Verified against the running Model Cabinet frontend: discovery enables its image attachment
+button and an image sent through `/api/chat` receives the correct streamed color answer
+(`bench/results/vision-discovery-2026-10-04.json`).
+The image path currently starts a vision helper for every image, so its setup latency
 is separate from text inference throughput. Check it with `test/generation_smoke.py` against a
 running larger-quant server.
 

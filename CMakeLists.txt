@@ -65,3 +65,11 @@ add_test(NAME expert_layout COMMAND helios_expert_layout_test)
 add_test(NAME prefix_policy COMMAND helios_prefix_test)
 add_test(NAME utf8 COMMAND helios_utf8_test)
 add_test(NAME chat_protocol COMMAND helios_chat_test)
+
+# Header-only checkpoint capability detection: no model weights or CUDA context needed.
+add_executable(helios_vision_support_test test/test_vision_support.cpp
+  src/core/vision.cpp src/core/safetensors.cpp)
+target_include_directories(helios_vision_support_test PRIVATE src third_party)
+target_compile_definitions(helios_vision_support_test PRIVATE HELIOS_VISION_SCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/scripts/vision_encode.py")
+target_link_libraries(helios_vision_support_test PRIVATE Threads::Threads)
+add_test(NAME vision_support COMMAND helios_vision_support_test)

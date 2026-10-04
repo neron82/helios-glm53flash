@@ -1,4 +1,5 @@
 #include "core/vision.hpp"
+#include "core/safetensors.hpp"
 #include "json.hpp"
 #include <cerrno>
 #include <cstdlib>
@@ -12,6 +13,20 @@
 
 extern char** environ;
 namespace helios {
+bool supports_vision_input(const ShardSet& shards) {
+  // Both checkpoints declare vision_config, but only the dense tower is supported.
+  // Inspect headers only; do not copy the tower to RAM or reserve GPU memory here.
+  if (!shards.find("model.visual.patch_embed.proj.weight") ||
+      !shards.find("model.visual.merger.down_proj.weight")) return false;
+  for (const auto* tensor : shards.tensors()) {
+    if (!tensor->name.starts_with("model.visual.")) continue;
+    if (tensor->name.ends_with(".trellis") || tensor->name.ends_with(".suh") ||
+        tensor->name.ends_with(".svh") || tensor->name.ends_with(".mul1")) return false;
+    if (tensor->dtype != Dtype::BF16 && tensor->dtype != Dtype::F16 &&
+        tensor->dtype != Dtype::F32) return false;
+  }
+  return true;
+}
 namespace {
 struct Temporary {
   std::string directory;
