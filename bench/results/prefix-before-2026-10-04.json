@@ -1,0 +1,201 @@
+{
+  "engine_revision": "643d5cf",
+  "context_tokens": 262144,
+  "chunk_tokens": 4096,
+  "prefix_snapshot_mib": 4096,
+  "prefix_snapshot_interval": 8192,
+  "text": [
+    {
+      "wall_s": 7.484675212064758,
+      "metrics": {
+        "requests": 5,
+        "prefill_ms": 6891.386366009712,
+        "prefill_tokens": 1788,
+        "decode_ms": 559.6117662191391,
+        "decode_tokens": 5,
+        "decode_tps": 8.934765674748238,
+        "prefill_tps": 259.4543253036758,
+        "prefix_reused_tokens": 0,
+        "prefix_last_resume": 0,
+        "prefix_snapshots": 28,
+        "prefix_snapshot_interval": 8192
+      },
+      "response": {
+        "id": "chatcmpl-1a1064348760004",
+        "object": "chat.completion",
+        "created": 1791106435,
+        "model": "glm-5.3-flash-exl3",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "AMBER731"
+            },
+            "logprobs": null,
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 1788,
+          "completion_tokens": 6,
+          "total_tokens": 1794
+        }
+      }
+    },
+    {
+      "wall_s": 1.0266296629561111,
+      "metrics": {
+        "requests": 6,
+        "prefill_ms": 7360.9955859184265,
+        "prefill_tokens": 1792,
+        "decode_ms": 1112.4623260498047,
+        "decode_tokens": 10,
+        "decode_tps": 8.989068452779499,
+        "prefill_tps": 243.44533006215806,
+        "prefix_reused_tokens": 1784,
+        "prefix_last_resume": 1784,
+        "prefix_snapshots": 28,
+        "prefix_snapshot_interval": 8192
+      },
+      "response": {
+        "id": "chatcmpl-1a10643659f0005",
+        "object": "chat.completion",
+        "created": 1791106442,
+        "model": "glm-5.3-flash-exl3",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "AMBER731"
+            },
+            "logprobs": null,
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 1788,
+          "completion_tokens": 6,
+          "total_tokens": 1794
+        }
+      }
+    },
+    {
+      "wall_s": 1.3567631979240105,
+      "metrics": {
+        "requests": 7,
+        "prefill_ms": 8154.99511885643,
+        "prefill_tokens": 1806,
+        "decode_ms": 1671.0215690135956,
+        "decode_tokens": 15,
+        "decode_tps": 8.9765448143524,
+        "prefill_tps": 221.45936002145078,
+        "prefix_reused_tokens": 3577,
+        "prefix_last_resume": 1793,
+        "prefix_snapshots": 28,
+        "prefix_snapshot_interval": 8192
+      },
+      "response": {
+        "id": "chatcmpl-1a1064369a10006",
+        "object": "chat.completion",
+        "created": 1791106443,
+        "model": "glm-5.3-flash-exl3",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "AMBER731"
+            },
+            "logprobs": null,
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 1807,
+          "completion_tokens": 6,
+          "total_tokens": 1813
+        }
+      }
+    }
+  ],
+  "image": [
+    {
+      "wall_s": 21.622576196095906,
+      "response": {
+        "id": "chatcmpl-1a10648ac210009",
+        "object": "chat.completion",
+        "created": 1791106788,
+        "model": "glm-5.3-flash-exl3",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "Red"
+            },
+            "logprobs": null,
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 1845,
+          "completion_tokens": 2,
+          "total_tokens": 1847
+        }
+      },
+      "metrics": {
+        "requests": 10,
+        "prefill_ms": 7026.998508095741,
+        "prefill_tokens": 1845,
+        "decode_ms": 105.85594701766968,
+        "decode_tokens": 1,
+        "decode_tps": 9.4468003751653,
+        "prefill_tps": 262.55875789277485,
+        "prefix_reused_tokens": 3577,
+        "prefix_last_resume": 0,
+        "prefix_snapshots": 28,
+        "prefix_snapshot_interval": 8192
+      }
+    },
+    {
+      "wall_s": 21.361174802994356,
+      "response": {
+        "id": "chatcmpl-1a10648ff93000a",
+        "object": "chat.completion",
+        "created": 1791106809,
+        "model": "glm-5.3-flash-exl3",
+        "choices": [
+          {
+            "index": 0,
+            "message": {
+              "role": "assistant",
+              "content": "Red"
+            },
+            "logprobs": null,
+            "finish_reason": "stop"
+          }
+        ],
+        "usage": {
+          "prompt_tokens": 1845,
+          "completion_tokens": 2,
+          "total_tokens": 1847
+        }
+      },
+      "metrics": {
+        "requests": 11,
+        "prefill_ms": 7027.764177083969,
+        "prefill_tokens": 1845,
+        "decode_ms": 107.0780279636383,
+        "decode_tokens": 1,
+        "decode_tps": 9.338984094286657,
+        "prefill_tps": 262.53015233723255,
+        "prefix_reused_tokens": 3577,
+        "prefix_last_resume": 0,
+        "prefix_snapshots": 28,
+        "prefix_snapshot_interval": 8192
+      }
+    }
+  ]
+}

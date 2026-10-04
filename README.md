@@ -222,8 +222,11 @@ image-color, multi-image, and OCR smoke checks passed; GPU0's total device usage
 16,828 MiB (sampled once per second). See `bench/results/launcher-generation-2026-10-04.json`
 and `bench/results/launcher-memory-2026-10-04.json`. The smaller-context image example above
 was also validated at cap 16384 and chunk 2048.
-Image requests reset prefix reuse because identical
-placeholder tokens can represent different pixels.
+Image requests compare the actual vision embeddings as well as token IDs before reusing a
+prefix. Resending an unchanged image or extending its chat keeps the existing KV and KDA
+checkpoints; changing, adding, moving, or removing an image limits reuse to the prefix before
+that image. The server also keeps a 128 MiB LRU cache of image data URLs and encoded embeddings
+in host RAM, avoiding repeated vision-tower loads for the same image.
 
 Send `/v1/chat/completions` a content array such as:
 
@@ -243,7 +246,7 @@ and only text capabilities. Detection reads tensor headers without loading the v
 Verified against the running Model Cabinet frontend: discovery enables its image attachment
 button and an image sent through `/api/chat` receives the correct streamed color answer
 (`bench/results/vision-discovery-2026-10-04.json`).
-The image path currently starts a vision helper for every image, so its setup latency
+The image path starts a vision helper on an image-encoding cache miss, so its setup latency
 is separate from text inference throughput. Check it with `test/generation_smoke.py` against a
 running larger-quant server.
 
@@ -329,8 +332,10 @@ history and picks one of three modes:
 | **snapshot** | the prompt diverges, and a snapshot exists at or below the divergence | restore 142 MB (≈50 ms over the x4 link), then recompute from the snapshot |
 | **restart** | the prompt shares too little history, or no snapshot is old enough | a normal full prefill |
 
-The last token of the prompt is always re-run, because the caller samples from it; that also
-guarantees at least one row through the model even when the whole prompt is already resident.
+Repeated prompts restore an exact KDA snapshot at the last four-token pool boundary before
+the prompt end, then replay 1–4 tokens for the sampling logits. A snapshot's position is never
+rounded after capture: its recurrent state must correspond to exactly the restored position.
+After a rollback, snapshots beyond that point are invalidated before the new suffix is written.
 
 Measured through the server on a 15k-token document with a passphrase planted at the very start
 (retrieval from the *reused* region is the correctness signal — a prefix cache that served the wrong
@@ -346,6 +351,18 @@ rows could not answer from it):
 All four answer the passphrase correctly. An earlier run at 21k tokens gave the same shape:
 61.7 s cold → **1.3 s re-sent (46.9×)** → 4.7 s for the next chat turn. The engine also logs the
 decision under `HELIOS_PREFIX_DEBUG`, and `/metrics` reports `prefix_reused_tokens`.
+Chat/completion responses also report the reused prefix in
+`usage.prompt_tokens_details.cached_tokens`; streaming chat includes it when
+`stream_options.include_usage` is true. `/metrics` exposes image-encoding cache hits and misses.
+
+On the abliterated model at cap 262144 / chunk 4096, a repeated 1,845-token image request
+previously took **21.36 s** and recomputed all 1,845 tokens. It now takes **0.24 s**, reuses
+**1,844 tokens**, and hits the image-encoding cache; extending that image chat takes **1.03 s**
+and reuses 1,846 of 1,861 tokens. These are whole-request times for short color answers, not
+decode-throughput measurements. All 24 cache checks and three image requests through Model Cabinet
+passed. See `test/prefix_smoke.py`, `bench/results/prefix-before-2026-10-04.json`,
+`bench/results/prefix-reuse-2026-10-04.json`, and `bench/results/prefix-frontend-2026-10-04.json`
+for alignment, branch, image, streaming usage, and frontend regression results.
 
 Two things to know when measuring it: a client that renders its history differently from the previous
 turn (for example one that drops the reasoning text of an earlier assistant turn) makes the prompts
@@ -495,9 +512,9 @@ Compressing the KV to q8_0 was evaluated and **not implemented**, for three meas
   Within one conversation, a re-sent or extended prompt reuses everything up to the point where the
   prompts diverge.
 - **Reuse after a mid-history divergence costs one snapshot interval.** Snapshots are 8192 tokens
-  apart by default, so a prompt that diverges 5k tokens back recomputes up to 8k tokens; raise
-  `--prefix-interval` (less recompute, less history covered per snapshot budget) or lower it as
-  needed. Setting `--prefix-snap-mb 0` disables snapshots entirely and leaves extension-only reuse.
+  apart by default, so a prompt that diverges 5k tokens back can recompute up to 8k tokens;
+  lower `--prefix-interval` to reduce recompute, trading away history coverage under the same
+  snapshot budget. Setting `--prefix-snap-mb 0` disables snapshots entirely and leaves extension-only reuse.
 - **Single sequence.** Concurrent requests queue rather than batch, so throughput does not improve
   with parallel clients. Correctness is unaffected.
 - **Not bit-reproducible run to run.** Two identical greedy runs diverge around token 10, almost

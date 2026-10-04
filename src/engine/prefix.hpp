@@ -8,12 +8,28 @@
 // tested exhaustively (test_prefix) instead of being inferred from output.
 #include <algorithm>
 #include <cstdint>
+#include <limits>
 #include <vector>
 
 namespace helios {
 
 // Tokens per indexer pool; a resume must be a multiple of this (see below).
 inline constexpr int POOL_TOKENS = 4;
+
+inline int prefix_checkpoint_before(int end) {
+  return end > 0 ? (end - 1) / POOL_TOKENS * POOL_TOKENS : 0;
+}
+
+// A branch rewrites cache rows after resume. States from that discarded suffix
+// must never be restored against the new resident history.
+inline int prefix_discard_suffix(std::vector<int>& snap_pos, int resume) {
+  int latest = 0;
+  for (int& pos : snap_pos) {
+    if (pos > resume) pos = -1;
+    latest = std::max(latest, pos);
+  }
+  return latest;
+}
 
 struct PrefixPlan {
   int common = 0;        // tokens the prompt shares with the resident history
@@ -25,10 +41,11 @@ struct PrefixPlan {
 // hist: the token sequence the caches currently hold; pos: how many of those rows are computed.
 // snap_pos: captured position per snapshot slot (-1 = empty).
 inline PrefixPlan prefix_plan(const std::vector<int32_t>& hist, int pos,
-                              const std::vector<int>& prompt, const std::vector<int>& snap_pos) {
+                              const std::vector<int>& prompt, const std::vector<int>& snap_pos,
+                              int reuse_limit = std::numeric_limits<int>::max()) {
   PrefixPlan pl;
   const int ps = (int)prompt.size();
-  const int lim = std::min<int>((int)hist.size(), pos);
+  const int lim = std::max(0, std::min({(int)hist.size(), pos, reuse_limit}));
   int L = 0;
   while (L < lim && L < ps && prompt[L] == hist[L]) L++;
   pl.common = L;
@@ -46,7 +63,8 @@ inline PrefixPlan prefix_plan(const std::vector<int32_t>& hist, int pos,
   // snapshot interval.
   int best = -1;
   for (int i = 0; i < (int)snap_pos.size(); i++)
-    if (snap_pos[i] >= 0 && snap_pos[i] <= L && (best < 0 || snap_pos[i] > snap_pos[best])) best = i;
+    if (snap_pos[i] >= 0 && snap_pos[i] <= L && snap_pos[i] % POOL_TOKENS == 0 &&
+        (best < 0 || snap_pos[i] > snap_pos[best])) best = i;
   if (best >= 0) {
     pl.slot = best;
     pl.resume = snap_pos[best];
@@ -54,10 +72,8 @@ inline PrefixPlan prefix_plan(const std::vector<int32_t>& hist, int pos,
     pl.slot = -1;
     pl.resume = 0;                                   // no usable snapshot: recompute from the start
   }
-  // Resumes must land on a pool boundary: the indexer's raw rows are a ring, so a group must never
-  // straddle a position jump (within a chunk, and across decode steps, they are contiguous). Rounding
-  // down costs at most three tokens of recompute.
-  pl.resume -= pl.resume % POOL_TOKENS;
+  // Snapshot positions must already be pool-aligned. Rounding a position down
+  // without rewinding the captured recurrent state would restore the wrong prefix.
   return pl;
 }
 

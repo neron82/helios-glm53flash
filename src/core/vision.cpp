@@ -2,6 +2,8 @@
 #include "core/safetensors.hpp"
 #include "json.hpp"
 #include <cerrno>
+#include <algorithm>
+#include <limits>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -13,6 +15,43 @@
 
 extern char** environ;
 namespace helios {
+int image_prefix_limit(const std::vector<ImageEmbedding>& previous,
+                       const std::vector<ImageEmbedding>& current) {
+  int limit = std::numeric_limits<int>::max();
+  auto scan = [&](const auto& a, const auto& b) {
+    for (const auto& image : a) {
+      auto match = std::find_if(b.begin(), b.end(), [&](const auto& other) {
+        return image.start == other.start && image.rows == other.rows &&
+               image.hidden == other.hidden && image.values == other.values;
+      });
+      if (match == b.end()) limit = std::min(limit, image.start);
+    }
+  };
+  scan(previous, current);
+  scan(current, previous);
+  return limit;
+}
+
+bool ImageEmbeddingCache::get(const std::string& url, ImageEmbedding& image) {
+  auto entry = std::find_if(entries_.begin(), entries_.end(), [&](const auto& e) { return e.url == url; });
+  if (entry == entries_.end()) return false;
+  image = entry->image;
+  entries_.splice(entries_.begin(), entries_, entry);
+  return true;
+}
+
+void ImageEmbeddingCache::put(const std::string& url, const ImageEmbedding& image) {
+  const size_t bytes = url.size() + image.values.size() * sizeof(uint16_t);
+  if (bytes > budget_) return;
+  auto old = std::find_if(entries_.begin(), entries_.end(), [&](const auto& e) { return e.url == url; });
+  if (old != entries_.end()) { bytes_ -= old->bytes; entries_.erase(old); }
+  while (bytes_ + bytes > budget_ && !entries_.empty()) {
+    bytes_ -= entries_.back().bytes; entries_.pop_back();
+  }
+  entries_.push_front({url, image, bytes});
+  bytes_ += bytes;
+}
+
 bool supports_vision_input(const ShardSet& shards) {
   // Both checkpoints declare vision_config, but only the dense tower is supported.
   // Inspect headers only; do not copy the tower to RAM or reserve GPU memory here.

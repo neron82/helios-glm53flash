@@ -144,6 +144,37 @@ int main() {
     check("resume=0", pl.resume == 0);
   }
 
+  printf("[12] unaligned snapshots cannot be rounded into a different state\n");
+  {
+    auto h = hist_n(1000);
+    std::vector<int> p(h.begin(), h.end());
+    auto pl = prefix_plan(h, 1000, p, {996, 999});
+    check("restore exact aligned slot", pl.resume == 996 && pl.slot == 0);
+    auto invalid = prefix_plan(h, 1000, p, {999});
+    check("unaligned-only snapshots rejected", invalid.resume == 0 && invalid.slot == -1);
+    for (int n = 1; n < 32; ++n) {
+      int position = helios::prefix_checkpoint_before(n);
+      check("checkpoint aligned", position % 4 == 0);
+      check("replay 1..4 tokens", n - position >= 1 && n - position <= 4);
+    }
+  }
+  printf("[13] changed image bounds otherwise identical token history\n");
+  {
+    auto h = hist_n(1000);
+    std::vector<int> p(h.begin(), h.end());
+    auto pl = prefix_plan(h, 1000, p, {128, 512, 996}, 600);
+    check("image limits shared prefix", pl.common == 600 && pl.resume == 512);
+  }
+  printf("[14] branching discards states belonging to the abandoned suffix\n");
+  {
+    std::vector<int> positions = {128, 512, 996, -1};
+    check("last snapshot rewound", helios::prefix_discard_suffix(positions, 512) == 512);
+    check("future snapshot invalidated", positions == std::vector<int>({128, 512, -1, -1}));
+    auto h = hist_n(1000);
+    std::vector<int> p(h.begin(), h.end());
+    check("cannot restore stale branch", prefix_plan(h, 1000, p, positions).resume == 512);
+  }
+
   printf("\n%s: %d checks, %d failures\n", failures ? "FAIL" : "PASS", checks, failures);
   return failures ? 1 : 0;
 }

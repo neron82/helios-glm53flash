@@ -268,6 +268,7 @@ void Runner::reset() {
   snap_next_ = snap_last_ = 0;
   pos_ = 0;
   hist_.clear();
+  cached_images_.clear();
   Device& g0 = Engine::instance().gpu(0);
   // zero KDA states + ckv/idx planes are position-addressed, no clear needed beyond states
   HELIOS_CUDA_CHECK(cudaMemsetAsync(c_->kda_conv(0), 0, (size_t)c_->n_kda() * 24576 * 4 * 2, g0.stream(0)));
@@ -308,15 +309,15 @@ void Runner::kda_state_io(char* buf, bool save, cudaStream_t s) {
       HELIOS_CUDA_CHECK(cudaMemcpyAsync(p, c_->kda_conv(o), conv, cudaMemcpyDeviceToDevice, s));
       HELIOS_CUDA_CHECK(cudaMemcpyAsync(p + conv, c_->kda_rec(o), rec, cudaMemcpyDeviceToDevice, s));
     } else {
-      HELIOS_CUDA_CHECK(cudaMemcpyAsync(c_->kda_conv(o), p, conv, cudaMemcpyDeviceToDevice, s));
-      HELIOS_CUDA_CHECK(cudaMemcpyAsync(c_->kda_rec(o), p + conv, rec, cudaMemcpyDeviceToDevice, s));
+      HELIOS_CUDA_CHECK(cudaMemcpyAsync(c_->kda_conv(o), p, conv, cudaMemcpyHostToDevice, s));
+      HELIOS_CUDA_CHECK(cudaMemcpyAsync(c_->kda_rec(o), p + conv, rec, cudaMemcpyHostToDevice, s));
     }
   }
 }
 
 // The state at `pos` is captured only when it is final there, i.e. from the caller's chunk boundary.
 void Runner::snap_capture(int pos) {
-  if (n_snaps_ <= 0) return;
+  if (n_snaps_ <= 0 || pos % POOL_TOKENS != 0) return;
   snap_drain();                                   // the staging buffer must be free
   Device& g0 = Engine::instance().gpu(0);
   cudaStream_t s = s0_stream();
@@ -339,9 +340,9 @@ void Runner::snap_restore(int slot) {
   // the state; the restored bytes are exactly what a fresh forward over the same prefix would leave.
 }
 
-int Runner::prefix_begin(const std::vector<int>& prompt) {
+int Runner::prefix_begin(const std::vector<int>& prompt, int reuse_limit) {
   const int resident = std::min<int>((int)hist_.size(), pos_);   // for the debug line below
-  PrefixPlan pl = prefix_plan(hist_, pos_, prompt, snap_pos_);
+  PrefixPlan pl = prefix_plan(hist_, pos_, prompt, snap_pos_, reuse_limit);
   if (pl.extend) {
     resume_ = pl.resume;
   } else if (pl.slot >= 0) {
@@ -352,6 +353,7 @@ int Runner::prefix_begin(const std::vector<int>& prompt) {
     resume_ = 0;
   }
   if (resume_ > c_->cap()) { reset(); resume_ = 0; }
+  snap_last_ = prefix_discard_suffix(snap_pos_, resume_);
   pos_ = resume_;
   hist_.resize(resume_);
   prefix_reqs_++;
@@ -1414,16 +1416,17 @@ void Runner::prefill(const std::vector<int>& ids) {
   // experts once per super-chunk instead of once per chunk (much less PCIe traffic for long
   // prompts) but still trips an illegal access inside the MoE path, so it stays opt-in.
   if (getenv("HELIOS_LAYER_MAJOR") == nullptr || (images_ && !images_->empty())) {
-    // The KDA state one token before the prompt end is the one a *re-sent* request resumes from (its
-    // prompt matches the resident history completely, and the last token is always re-run because the
-    // caller needs its logits). So the last chunk stops one token short and that state is snapshotted;
-    // the cost is a single 1-token chunk (~80 ms of expert streaming) per request, and it saves the
-    // whole 8192-token snapshot interval that would otherwise be recomputed.
-    const int tail = (n_snaps_ > 0 && n > 1) ? 1 : 0;
+    // Save the exact state at the last pool boundary before the prompt end.
+    // Re-sends replay only 1..4 rows for logits; never round down a saved state.
+    const int tail_checkpoint = prefix_checkpoint_before(pos_ + n);
     int done0 = 0, last0 = 0, chunk0 = std::min(max_chunk_, n);
     while (done0 < n) {
       chunk0 = std::min(max_chunk_, n - done0);
-      if (tail && done0 + chunk0 == n && chunk0 > tail) chunk0 -= tail;
+      if (n_snaps_ > 0) {
+        const int interval_checkpoint = ((snap_last_ + snap_interval_ + POOL_TOKENS - 1) / POOL_TOKENS) * POOL_TOKENS;
+        for (int checkpoint : {interval_checkpoint, tail_checkpoint})
+          if (checkpoint > pos_ && checkpoint < pos_ + chunk0) chunk0 = checkpoint - pos_;
+      }
       last0 = chunk0;
       HELIOS_CUDA_CHECK(cudaMemcpyAsync(w0.tokens, ids.data() + done0, chunk0 * 4,
                                         cudaMemcpyHostToDevice, s0_stream()));
@@ -1435,9 +1438,9 @@ void Runner::prefill(const std::vector<int>& ids) {
       pos_ += chunk0;
       done0 += chunk0;
       hist_.insert(hist_.end(), ids.begin() + (done0 - chunk0), ids.begin() + done0);
-      // Snapshot at chunk granularity, plus the one-token-short state at the end of the prompt.
+      // Periodic aligned checkpoints and the aligned state just before the prompt end.
       if (n_snaps_ > 0 &&
-          (pos_ - snap_last_ >= snap_interval_ || (tail && done0 == n - tail)))
+          (pos_ - snap_last_ >= snap_interval_ || pos_ == tail_checkpoint))
         snap_capture(pos_);
     }
     final_head(last0);
@@ -1512,15 +1515,16 @@ std::vector<int> Runner::generate(const std::vector<int>& prompt, const GenParam
         (size_t)image.start + image.rows > prompt.size() ||
         image.values.size() != (size_t)image.rows * image.hidden)
       throw std::runtime_error("image embeddings do not match prompt positions");
-  // Token IDs alone cannot establish prefix equality when pixels differ.
-  if (!images.empty() || cached_image_) reset();
-  cached_image_ = !images.empty();
+  // Match semantic image inputs as well as token IDs. An unchanged image can
+  // reuse its KV; changing pixels invalidates only the suffix from that image.
+  const int reuse_limit = image_prefix_limit(cached_images_, images);
   images_ = &images;
   struct ClearImages {
     const std::vector<ImageEmbedding>*& pointer;
     ~ClearImages() { pointer = nullptr; }
   } clear_images{images_};
-  const int start = prefix_begin(prompt);
+  const int start = prefix_begin(prompt, reuse_limit);
+  cached_images_ = images;
   if (start < (int)prompt.size())
     prefill(std::vector<int>(prompt.begin() + start, prompt.end()));
   std::vector<int> out;

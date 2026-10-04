@@ -4,6 +4,7 @@
 #include <chrono>
 #include <cstdio>
 #include <fstream>
+#include <limits>
 #include <stdexcept>
 
 using namespace helios;
@@ -40,6 +41,31 @@ int main(int argc, char** argv) {
     return 0;
   }
   ShardSet empty;
+  ImageEmbedding red{100, 2, 2, {1, 2, 3, 4}};
+  ImageEmbedding blue{100, 2, 2, {4, 3, 2, 1}};
+  require(image_prefix_limit({}, {}) == std::numeric_limits<int>::max(), "text prefix restricted");
+  require(image_prefix_limit({red}, {red}) == std::numeric_limits<int>::max(), "identical image invalidated");
+  require(image_prefix_limit({red}, {blue}) == 100, "changed pixels reused");
+  require(image_prefix_limit({red}, {}) == 100, "removed image reused");
+  require(image_prefix_limit({}, {red}) == 100, "new image reused");
+  auto later = blue; later.start = 200;
+  require(image_prefix_limit({red}, {red, later}) == 200, "later image discarded earlier prefix");
+  require(image_prefix_limit({red}, {later}) == 100, "moved image reused");
+  ImageEmbeddingCache cache(20);
+  cache.put("red", red); cache.put("blue", blue);
+  ImageEmbedding found;
+  require(!cache.get("red", found), "oldest entry not evicted");
+  require(cache.get("blue", found) && found.values == blue.values, "wrong cached embeddings");
+  cache.put("blue", red);
+  require(cache.get("blue", found) && found.values == red.values, "replacement not cached");
+  auto huge = red; huge.values.resize(100);
+  cache.put("huge", huge);
+  require(!cache.get("huge", found) && cache.bytes() <= 20, "image cache budget exceeded");
+  ImageEmbeddingCache lru(32);
+  lru.put("one", red); lru.put("two", blue);
+  require(lru.get("one", found), "first entry missing");
+  lru.put("third", red);
+  require(!lru.get("two", found) && lru.get("one", found), "LRU order lost on cache hit");
   require(!supports_vision_input(empty), "text-only model advertised vision");
   auto directory = std::filesystem::temp_directory_path() /
       ("helios-vision-support-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));

@@ -70,7 +70,7 @@ public:
 
 private:
   const std::vector<ImageEmbedding>* images_ = nullptr;
-  bool cached_image_ = false;
+  std::vector<ImageEmbedding> cached_images_;
   void inject_images(int n, int pos);
   void run_chunk(int n, int pos, bool prefill);
 
@@ -78,7 +78,7 @@ private:
   // Decides the resume position for `prompt` against the resident history, restoring the KDA state
   // (from a snapshot if the prompt diverges from the history, or keeping it if it merely extends it)
   // and returning that position. `hist_` is the token sequence the caches currently hold.
-  int prefix_begin(const std::vector<int>& prompt);
+  int prefix_begin(const std::vector<int>& prompt, int reuse_limit);
   size_t kda_state_bytes() const;    // one KDA layer's conv window + recurrent matrix
   void snap_capture(int pos);        // stage the KDA state and start its async copy into a host slot
   void snap_restore(int slot);       // copy a snapshot back into the KDA layers

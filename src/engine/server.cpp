@@ -220,6 +220,8 @@ int run_server(Runner& runner, Tokenizer& tk, const std::string& host, int port,
   const bool supports_vision = runner.supports_vision();
   static std::mutex gen_mu;          // one generation at a time (single-sequence engine)
   static std::atomic<uint64_t> served{0};
+  ImageEmbeddingCache image_cache;
+  std::atomic<uint64_t> image_cache_hits{0}, image_cache_misses{0};
 
   // A stop caused by running out of KV capacity is reported as "length", like a max_tokens stop:
   // the caller must be able to tell truncation from a natural end.
@@ -266,7 +268,9 @@ int run_server(Runner& runner, Tokenizer& tk, const std::string& host, int port,
            {"prefix_reused_tokens", runner.prefix_reuse_total()},
            {"prefix_last_resume", runner.prefix_resume()},
            {"prefix_snapshots", runner.prefix_snapshot_count()},
-           {"prefix_snapshot_interval", runner.prefix_snapshot_interval()}};
+           {"prefix_snapshot_interval", runner.prefix_snapshot_interval()},
+           {"image_encoder_cache_hits", image_cache_hits.load()},
+           {"image_encoder_cache_misses", image_cache_misses.load()}};
     res.set_content(j.dump(), "application/json");
   };
   srv.Get("/metrics", metrics);
@@ -336,9 +340,15 @@ int run_server(Runner& runner, Tokenizer& tk, const std::string& host, int port,
       std::lock_guard<std::mutex> lock(gen_mu);
       for (size_t i = 0; i < req.image_urls.size(); ++i) {
         ImageEmbedding image;
-        if (!encode_image_url(req.image_urls[i], runner.model_directory(),
-                              Engine::instance().gpu(0).phys_idx(), image, err)) {
-          error_response(res, 400, err, "invalid_request_error"); return;
+        if (image_cache.get(req.image_urls[i], image)) {
+          image_cache_hits++;
+        } else {
+          image_cache_misses++;
+          if (!encode_image_url(req.image_urls[i], runner.model_directory(),
+                                Engine::instance().gpu(0).phys_idx(), image, err)) {
+            error_response(res, 400, err, "invalid_request_error"); return;
+          }
+          image_cache.put(req.image_urls[i], image);
         }
         std::string marker = "[HELIOS_IMAGE_" + std::to_string(i) + "]";
         std::string tokens = "<|begin_of_image|>";
@@ -405,6 +415,7 @@ int run_server(Runner& runner, Tokenizer& tk, const std::string& host, int port,
                                           {"logprobs", nullptr},
                                           {"finish_reason", finish}}})},
                 {"usage", {{"prompt_tokens", (int)prompt.size()},
+                           {"prompt_tokens_details", {{"cached_tokens", runner.prefix_resume()}}},
                            {"completion_tokens", out.completion_tokens},
                            {"total_tokens", (int)prompt.size() + out.completion_tokens}}}};
       served++;
@@ -485,6 +496,7 @@ int run_server(Runner& runner, Tokenizer& tk, const std::string& host, int port,
             json u = base;
             u["choices"] = json::array();
             u["usage"] = {{"prompt_tokens", (int)prompt.size()},
+                          {"prompt_tokens_details", {{"cached_tokens", runner.prefix_resume()}}},
                           {"completion_tokens", out.completion_tokens},
                           {"total_tokens", (int)prompt.size() + out.completion_tokens}};
             alive = send(u);
@@ -543,6 +555,7 @@ int run_server(Runner& runner, Tokenizer& tk, const std::string& host, int port,
               {"model", kModelId},
               {"choices", json::array({{{"index", 0}, {"text", out.content}, {"finish_reason", finish}}})},
               {"usage", {{"prompt_tokens", (int)prompt.size()},
+                         {"prompt_tokens_details", {{"cached_tokens", runner.prefix_resume()}}},
                          {"completion_tokens", out.completion_tokens},
                          {"total_tokens", (int)prompt.size() + out.completion_tokens}}}};
     served++;
