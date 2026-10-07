@@ -1,0 +1,50 @@
+{
+  "proven": true,
+  "timings": {
+    "before": {
+      "emitted_convention_tps": [
+        8.728205436414834,
+        8.867161804981711,
+        8.85099078578279,
+        8.885179071999758
+      ],
+      "median": 8.85907629538225,
+      "forward_median": 8.824470528603413,
+      "wall_median": 8.801976612630622
+    },
+    "after": {
+      "emitted_convention_tps": [
+        8.890912342891264,
+        8.909564993591083,
+        8.809887811262863,
+        8.901358217655584,
+        8.87419355633103,
+        8.904000901985915,
+        8.905380543613646,
+        8.908469599496023
+      ],
+      "median": 8.90267955982075,
+      "forward_median": 8.8679034677902,
+      "wall_median": 8.844939436340198
+    },
+    "identity": {
+      "emitted_convention_tps": [
+        9.753035784913797,
+        9.767460678710219,
+        9.769941548365177,
+        9.768243112944226
+      ],
+      "median": 9.767851895827222,
+      "forward_median": 9.729696224359147,
+      "wall_median": 9.702072441329321
+    },
+    "reference_tps": 8.855,
+    "change_vs_reference_pct": 0.538447880527948,
+    "change_vs_current_before_pct": 0.4921874807786608
+  },
+  "identical_flags": true,
+  "census_unchanged": true,
+  "identity_reference_sha256": "204b072b7633fe7dd380b44530ded033da71208f1e8b67f87f3550ce5c27fd86",
+  "identity_sha256": "204b072b7633fe7dd380b44530ded033da71208f1e8b67f87f3550ce5c27fd86",
+  "identity_first_difference": null
+}

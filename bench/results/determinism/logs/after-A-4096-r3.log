@@ -1,0 +1,689 @@
+107374182400
+118111600640
+1073741824
+[device] gpu0 (0000:07:00.0) H2D 2.85 GB/s
+[device] gpu1 (0000:2B:00.0) H2D 26.17 GB/s
+[model] experts L3 bits=3/3/3 slab=9.035MB arena_offset=0
+[model] experts L4 bits=3/3/3 slab=9.035MB arena_offset=2728581120
+[model] experts L5 bits=3/3/3 slab=9.035MB arena_offset=5457162240
+[model] experts L6 bits=3/3/3 slab=9.035MB arena_offset=8185743360
+[model] experts L7 bits=3/3/3 slab=9.035MB arena_offset=10914324480
+[model] experts L8 bits=3/3/3 slab=9.035MB arena_offset=13642905600
+[model] experts L9 bits=3/3/3 slab=9.035MB arena_offset=16371486720
+[model] experts L10 bits=3/3/3 slab=9.035MB arena_offset=19100067840
+[model] experts L11 bits=3/3/3 slab=9.035MB arena_offset=21828648960
+[model] experts L12 bits=2/2/2 slab=6.035MB arena_offset=24557230080
+[model] experts L13 bits=2/2/2 slab=6.035MB arena_offset=26379841536
+[model] experts L14 bits=2/2/2 slab=6.035MB arena_offset=28202452992
+[model] experts L15 bits=2/2/2 slab=6.035MB arena_offset=30025064448
+[model] experts L16 bits=2/2/2 slab=6.035MB arena_offset=31847675904
+[model] experts L17 bits=2/2/2 slab=6.035MB arena_offset=33670287360
+[model] experts L18 bits=2/2/2 slab=6.035MB arena_offset=35492898816
+[model] experts L19 bits=2/2/2 slab=6.035MB arena_offset=37315510272
+[model] experts L20 bits=2/2/2 slab=6.035MB arena_offset=39138121728
+[model] experts L21 bits=2/2/2 slab=6.035MB arena_offset=40960733184
+[model] experts L22 bits=2/2/2 slab=6.035MB arena_offset=42783344640
+[model] experts L23 bits=2/2/2 slab=6.035MB arena_offset=44605956096
+[model] experts L24 bits=2/2/2 slab=6.035MB arena_offset=46428567552
+[model] experts L25 bits=2/2/2 slab=6.035MB arena_offset=48251179008
+[model] experts L26 bits=2/2/2 slab=6.035MB arena_offset=50073790464
+[model] experts L27 bits=2/2/2 slab=6.035MB arena_offset=51896401920
+[model] experts L28 bits=2/2/2 slab=6.035MB arena_offset=53719013376
+[model] experts L29 bits=2/2/2 slab=6.035MB arena_offset=55541624832
+[model] experts L30 bits=2/2/2 slab=6.035MB arena_offset=57364236288
+[model] experts L31 bits=2/2/2 slab=6.035MB arena_offset=59186847744
+[model] experts L32 bits=2/2/2 slab=6.035MB arena_offset=61009459200
+[model] experts L33 bits=2/2/2 slab=6.035MB arena_offset=62832070656
+[model] experts L34 bits=3/3/3 slab=9.035MB arena_offset=64654682112
+[model] experts L35 bits=3/3/3 slab=9.035MB arena_offset=67383263232
+[model] experts L36 bits=3/3/3 slab=9.035MB arena_offset=70111844352
+[model] experts L37 bits=3/3/3 slab=9.035MB arena_offset=72840425472
+[model] experts L38 bits=3/3/3 slab=9.035MB arena_offset=75569006592
+[model] experts L39 bits=3/3/3 slab=9.035MB arena_offset=78297587712
+[model] experts L40 bits=3/3/3 slab=9.035MB arena_offset=81026168832
+[model] experts L41 bits=3/3/3 slab=9.035MB arena_offset=83754749952
+[model] experts L42 bits=3/3/3 slab=9.035MB arena_offset=86483331072
+[model] experts L43 bits=3/3/3 slab=9.035MB arena_offset=89211912192
+[model] experts L44 bits=3/3/3 slab=9.035MB arena_offset=91940493312
+[model] experts L45 bits=4/4/4 slab=12.035MB arena_offset=94669074432
+[model] arena pinned in 47.8 s
+[model] alloc dev0 1210.0 MB (gpu0 total 0.00 GB)
+[model] alloc dev0 453.8 MB (gpu0 total 1.18 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 1.63 GB)
+[model] alloc dev0 18.0 MB (gpu0 total 1.69 GB)
+[model] alloc dev0 18.0 MB (gpu0 total 1.71 GB)
+[model] alloc dev0 18.0 MB (gpu0 total 1.73 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 1.75 GB)
+[model] alloc dev0 18.0 MB (gpu0 total 1.82 GB)
+[model] alloc dev0 18.0 MB (gpu0 total 1.84 GB)
+[model] alloc dev0 18.0 MB (gpu0 total 1.86 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 1.88 GB)
+[model] alloc dev0 18.0 MB (gpu0 total 1.95 GB)
+[model] alloc dev0 18.0 MB (gpu0 total 1.96 GB)
+[model] alloc dev0 18.0 MB (gpu0 total 1.98 GB)
+[model] alloc dev0 32.0 MB (gpu0 total 2.02 GB)
+[model] alloc dev0 32.0 MB (gpu0 total 2.05 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 2.10 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 2.19 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 2.27 GB)
+[model] alloc dev0 32.0 MB (gpu0 total 2.38 GB)
+[model] alloc dev0 32.0 MB (gpu0 total 2.41 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 2.46 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 2.54 GB)
+[model] al[runner] chunk n=4096 pos=0
+[tok] 2
+loc dev0 48.0 MB (gpu0 total 2.63 GB)
+[model] alloc dev0 32.0 MB (gpu0 total 2.73 GB)
+[model] alloc dev0 32.0 MB (gpu0 total 2.76 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 2.81 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 2.90 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 2.99 GB)
+[model] alloc dev0 32.0 MB (gpu0 total 3.09 GB)
+[model] alloc dev0 32.0 MB (gpu0 total 3.12 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 3.17 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 3.26 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 3.34 GB)
+[model] alloc dev0 32.0 MB (gpu0 total 3.44 GB)
+[model] alloc dev0 32.0 MB (gpu0 total 3.47 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 3.53 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 3.61 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 3.70 GB)
+[model] alloc dev0 32.0 MB (gpu0 total 3.80 GB)
+[model] alloc dev0 32.0 MB (gpu0 total 3.83 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 3.88 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 3.97 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 4.05 GB)
+[model] alloc dev0 32.0 MB (gpu0 total 4.15 GB)
+[model] alloc dev0 32.0 MB (gpu0 total 4.18 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 4.24 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 4.32 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 4.41 GB)
+[model] alloc dev0 32.0 MB (gpu0 total 4.51 GB)
+[model] alloc dev0 32.0 MB (gpu0 total 4.54 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 4.59 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 4.68 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 4.76 GB)
+[model] alloc dev0 32.0 MB (gpu0 total 4.86 GB)
+[model] alloc dev0 32.0 MB (gpu0 total 4.89 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 4.95 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 5.03 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 5.12 GB)
+[model] alloc dev0 32.0 MB (gpu0 total 5.22 GB)
+[model] alloc dev0 32.0 MB (gpu0 total 5.25 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 5.30 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 5.39 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 5.47 GB)
+[model] alloc dev0 32.0 MB (gpu0 total 5.57 GB)
+[model] alloc dev0 32.0 MB (gpu0 total 5.61 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 5.66 GB)
+[model] alloc dev0 18.0 MB (gpu0 total 5.75 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 5.77 GB)
+[model] alloc dev0 32.0 MB (gpu0 total 5.81 GB)
+[model] alloc dev0 20.0 MB (gpu0 total 5.87 GB)
+[model] alloc dev1 18377.9 MB (gpu1 total 0.09 GB)
+[model] jobs=150637 arena=91.6GB gpu0=5.89GB gpu1=18.04GB slots=2034
+[model] load time 23.5 s (4.9 GB/s)
+[verify] 256 slab pieces checked, 0 mismatches
+[verify-gpu] 507 device tensors checked, 0 mismatches
+[tok] vocab=154856 merges=321649 added=36 eos=154820
+[cache] cap=262144 tokens mla=11 kda=34 kv=3.08GB total=4.27GB maxM=4096 idx_ring=4100 rows
+[slots] census loaded: /home/neron/models/glm53flash_abl/.helios.census (22682170 requests over 46 x 288)
+[slots] reusing pool: 2034 slots x 9.035 MB = 17.95 GB
+[runner] wuv^T built for 11 MLA layers
+[runner] KDA low-rank transposes built: 221.0 MB
+[runner] max_chunk=4096 moe_concurrency=8 gpu1_moe_scratch=768.0 MB
+[runner] prefix cache: snapshots disabled (extension-only reuse)
+[mem] gpu0 used 17.04 GB free 6.52 (pool 0.00) | gpu1 used 21.11 GB free 2.44 (pool 0.00)
+[gen] prompt tokens=4096
+#[runner] chunk n=1 pos=4096
+[tok] 576
+ The[runner] chunk n=1 pos=4097
+[tok] 59043
+ Silent[runner] chunk n=1 pos=4098
+[tok] 1527
+ An[runner] chunk n=1 pos=4099
+[tok] 82403
+omaly[runner] chunk n=1 pos=4100
+[tok] 271
+
+
+[runner] chunk n=1 pos=4101
+[tok] 785
+The[runner] chunk n=1 pos=4102
+[tok] 6556
+ morning[runner] chunk n=1 pos=4103
+[tok] 30132
+ fog[runner] chunk n=1 pos=4104
+[tok] 1030
+ had[runner] chunk n=1 pos=4105
+[tok] 537
+ not[runner] chunk n=1 pos=4106
+[tok] 3602
+ yet[runner] chunk n=1 pos=4107
+[tok] 29618
+ lifted[runner] chunk n=1 pos=4108
+[tok] 979
+ when[runner] chunk n=1 pos=4109
+[tok] 2926
+ Dr[runner] chunk n=1 pos=4110
+[tok] 13
+.[runner] chunk n=1 pos=4111
+[tok] 2876
+ Mar[runner] chunk n=1 pos=4112
+[tok] 59507
+isol[runner] chunk n=1 pos=4113
+[tok] 64139
+ Vega[runner] chunk n=1 pos=4114
+[tok] 15379
+ pushed[runner] chunk n=1 pos=4115
+[tok] 1787
+ open[runner] chunk n=1 pos=4116
+[tok] 279
+ the[runner] chunk n=1 pos=4117
+[tok] 6006
+ door[runner] chunk n=1 pos=4118
+[tok] 315
+ of[runner] chunk n=1 pos=4119
+[tok] 279
+ the[runner] chunk n=1 pos=4120
+[tok] 34067
+ coastal[runner] chunk n=1 pos=4121
+[tok] 3412
+ research[runner] chunk n=1 pos=4122
+[tok] 8055
+ station[runner] chunk n=1 pos=4123
+[tok] 11
+,[runner] chunk n=1 pos=4124
+[tok] 1059
+ her[runner] chunk n=1 pos=4125
+[tok] 25158
+ boots[runner] chunk n=1 pos=4126
+[tok] 9376
+ leaving[runner] chunk n=1 pos=4127
+[tok] 40048
+ damp[runner] chunk n=1 pos=4128
+[tok] 23408
+ prints[runner] chunk n=1 pos=4129
+[tok] 389
+ on[runner] chunk n=1 pos=4130
+[tok] 279
+ the[runner] chunk n=1 pos=4131
+[tok] 23638
+ worn[runner] chunk n=1 pos=4132
+[tok] 22303
+ wooden[runner] chunk n=1 pos=4133
+[tok] 6422
+ floor[runner] chunk n=1 pos=4134
+[tok] 13
+.[runner] chunk n=1 pos=4135
+[tok] 576
+ The[runner] chunk n=1 pos=4136
+[tok] 8055
+ station[runner] chunk n=1 pos=4137
+[tok] 7578
+ sat[runner] chunk n=1 pos=4138
+[tok] 389
+ on[runner] chunk n=1 pos=4139
+[tok] 264
+ a[runner] chunk n=1 pos=4140
+[tok] 55144
+ rocky[runner] chunk n=1 pos=4141
+[tok] 2706
+ prom[runner] chunk n=1 pos=4142
+[tok] 544
+ont[runner] chunk n=1 pos=4143
+[tok] 679
+ory[runner] chunk n=1 pos=4144
+[tok] 1380
+ where[runner] chunk n=1 pos=4145
+[tok] 279
+ the[runner] chunk n=1 pos=4146
+[tok] 9392
+ sea[runner] chunk n=1 pos=4147
+[tok] 2270
+ met[runner] chunk n=1 pos=4148
+[tok] 279
+ the[runner] chunk n=1 pos=4149
+[tok] 12877
+ sky[runner] chunk n=1 pos=4150
+[tok] 304
+ in[runner] chunk n=1 pos=4151
+[tok] 264
+ a[runner] chunk n=1 pos=4152
+[tok] 65115
+ perpetual[runner] chunk n=1 pos=4153
+[tok] 17520
+ gray[runner] chunk n=1 pos=4154
+[tok] 10430
+ conversation[runner] chunk n=1 pos=4155
+[tok] 11
+,[runner] chunk n=1 pos=4156
+[tok] 323
+ and[runner] chunk n=1 pos=4157
+[tok] 369
+ for[runner] chunk n=1 pos=4158
+[tok] 43958
+ eleven[runner] chunk n=1 pos=4159
+[tok] 1635
+ years[runner] chunk n=1 pos=4160
+[tok] 1340
+ she[runner] chunk n=1 pos=4161
+[tok] 1030
+ had[runner] chunk n=1 pos=4162
+[tok] 15372
+ watched[runner] chunk n=1 pos=4163
+[tok] 279
+ the[runner] chunk n=1 pos=4164
+[tok] 3015
+ water[runner] chunk n=1 pos=4165
+[tok] 36113
+ breathe[runner] chunk n=1 pos=4166
+[tok] 304
+ in[runner] chunk n=1 pos=4167
+[tok] 323
+ and[runner] chunk n=1 pos=4168
+[tok] 700
+ out[runner] chunk n=1 pos=4169
+[tok] 448
+ with[runner] chunk n=1 pos=4170
+[tok] 279
+ the[runner] chunk n=1 pos=4171
+[tok] 15572
+ seasons[runner] chunk n=1 pos=4172
+[tok] 382
+.
+
+[runner] chunk n=1 pos=4173
+[tok] 1
+"[runner] chunk n=1 pos=4174
+[tok] 83649
+Morning[runner] chunk n=1 pos=4175
+[tok] 11
+,[runner] chunk n=1 pos=4176
+[tok] 2876
+ Mar[runner] chunk n=1 pos=4177
+[tok] 59507
+isol[runner] chunk n=1 pos=4178
+[tok] 1335
+,"[runner] chunk n=1 pos=4179
+[tok] 2598
+ called[runner] chunk n=1 pos=4180
+[tok] 8363
+ Tom[runner] chunk n=1 pos=4181
+[tok] 7061
+ás[runner] chunk n=1 pos=4182
+[tok] 75552
+ Reyes[runner] chunk n=1 pos=4183
+[tok] 11
+,[runner] chunk n=1 pos=4184
+[tok] 279
+ the[runner] chunk n=1 pos=4185
+[tok] 8055
+ station[runner] chunk n=1 pos=4186
+[tok] 594
+'s[runner] chunk n=1 pos=4187
+[tok] 9985
+ senior[runner] chunk n=1 pos=4188
+[tok] 53154
+ technician[runner] chunk n=1 pos=4189
+[tok] 11
+,[runner] chunk n=1 pos=4190
+[tok] 504
+ from[runner] chunk n=1 pos=4191
+[tok] 4815
+ behind[runner] chunk n=1 pos=4192
+[tok] 806
+ his[runner] chunk n=1 pos=4193
+[tok] 6073
+ bank[runner] chunk n=1 pos=4194
+[tok] 315
+ of[runner] chunk n=1 pos=4195
+[tok] 36292
+ monitors[runner] chunk n=1 pos=4196
+[tok] 13
+.[runner] chunk n=1 pos=4197
+[tok] 330
+ "[runner] chunk n=1 pos=4198
+[tok] 28156
+Water[runner] chunk n=1 pos=4199
+[tok] 2730
+ temp[runner] chunk n=1 pos=4200
+[tok] 374
+ is[runner] chunk n=1 pos=4201
+[tok] 705
+ up[runner] chunk n=1 pos=4202
+[tok] 1378
+ two[runner] chunk n=1 pos=4203
+[tok] 12342
+ degrees[runner] chunk n=1 pos=4204
+[tok] 24325
+ overnight[runner] chunk n=1 pos=4205
+[tok] 13
+.[runner] chunk n=1 pos=4206
+[tok] 2938
+ That[runner] chunk n=1 pos=4207
+[tok] 594
+'s[runner] chunk n=1 pos=4208
+[tok] 537
+ not[runner] chunk n=1 pos=4209
+[tok] 35620
+ seasonal[runner] chunk n=1 pos=4210
+[tok] 2217
+."
+
+[runner] chunk n=1 pos=4211
+[tok] 12055
+Mar[runner] chunk n=1 pos=4212
+[tok] 59507
+isol[runner] chunk n=1 pos=4213
+[tok] 738
+ set[runner] chunk n=1 pos=4214
+[tok] 1495
+ down[runner] chunk n=1 pos=4215
+[tok] 1059
+ her[runner] chunk n=1 pos=4216
+[tok] 10794
+ coffee[runner] chunk n=1 pos=4217
+[tok] 323
+ and[runner] chunk n=1 pos=4218
+[tok] 54473
+ leaned[runner] chunk n=1 pos=4219
+[tok] 916
+ over[runner] chunk n=1 pos=4220
+[tok] 806
+ his[runner] chunk n=1 pos=4221
+[tok] 16863
+ shoulder[runner] chunk n=1 pos=4222
+[tok] 13
+.[runner] chunk n=1 pos=4223
+[tok] 330
+ "[runner] chunk n=1 pos=4224
+[tok] 11608
+Two[runner] chunk n=1 pos=4225
+[tok] 12342
+ degrees[runner] chunk n=1 pos=4226
+[tok] 304
+ in[runner] chunk n=1 pos=4227
+[tok] 29128
+ twelve[runner] chunk n=1 pos=4228
+[tok] 4115
+ hours[runner] chunk n=1 pos=4229
+[tok] 30
+?[runner] chunk n=1 pos=4230
+[tok] 2938
+ That[runner] chunk n=1 pos=4231
+[tok] 594
+'s[runner] chunk n=1 pos=4232
+[tok] 537
+ not[runner] chunk n=1 pos=4233
+[tok] 264
+ a[runner] chunk n=1 pos=4234
+[tok] 9146
+ trend[runner] chunk n=1 pos=4235
+[tok] 11
+,[runner] chunk n=1 pos=4236
+[tok] 429
+ that[runner] chunk n=1 pos=4237
+[tok] 594
+'s[runner] chunk n=1 pos=4238
+[tok] 264
+ a[runner] chunk n=1 pos=4239
+[tok] 7784
+ jump[runner] chunk n=1 pos=4240
+[tok] 13
+.[runner] chunk n=1 pos=4241
+[tok] 4248
+ Check[runner] chunk n=1 pos=4242
+[tok] 279
+ the[runner] chunk n=1 pos=4243
+[tok] 37416
+ calibration[runner] chunk n=1 pos=4244
+[tok] 2217
+."
+
+[runner] chunk n=1 pos=4245
+[tok] 1
+"[runner] chunk n=1 pos=4246
+[tok] 38163
+Already[runner] chunk n=1 pos=4247
+[tok] 1521
+ did[runner] chunk n=1 pos=4248
+[tok] 13
+.[runner] chunk n=1 pos=4249
+[tok] 93626
+ Sensors[runner] chunk n=1 pos=4250
+[tok] 525
+ are[runner] chunk n=1 pos=4251
+[tok] 4240
+ clean[runner] chunk n=1 pos=4252
+[tok] 13
+.[runner] chunk n=1 pos=4253
+[tok] 358
+ I[runner] chunk n=1 pos=4254
+[tok] 10608
+ ran[runner] chunk n=1 pos=4255
+[tok] 279
+ the[runner] chunk n=1 pos=4256
+[tok] 49101
+ diagnostics[runner] chunk n=1 pos=4257
+[tok] 10912
+ twice[runner] chunk n=1 pos=4258
+[tok] 1189
+."[runner] chunk n=1 pos=4259
+[tok] 8363
+ Tom[runner] chunk n=1 pos=4260
+[tok] 7061
+ás[runner] chunk n=1 pos=4261
+[tok] 13230
+ pulled[runner] chunk n=1 pos=4262
+[tok] 705
+ up[runner] chunk n=1 pos=4263
+[tok] 279
+ the[runner] chunk n=1 pos=4264
+[tok] 12307
+ comparison[runner] chunk n=1 pos=4265
+[tok] 1487
+ log[runner] chunk n=1 pos=4266
+[tok] 13
+.[runner] chunk n=1 pos=4267
+[tok] 330
+ "[runner] chunk n=1 pos=4268
+[tok] 10375
+Look[runner] chunk n=1 pos=4269
+[tok] 518
+ at[runner] chunk n=1 pos=4270
+[tok] 419
+ this[runner] chunk n=1 pos=4271
+[tok] 13
+.[runner] chunk n=1 pos=4272
+[tok] 59615
+ Yesterday[runner] chunk n=1 pos=4273
+[tok] 25
+:[runner] chunk n=1 pos=4274
+[tok] 220
+ [runner] chunk n=1 pos=4275
+[tok] 99367
+14[runner] chunk n=1 pos=4276
+[tok] 13
+.[runner] chunk n=1 pos=4277
+[tok] 17
+2[runner] chunk n=1 pos=4278
+[tok] 12342
+ degrees[runner] chunk n=1 pos=4279
+[tok] 13
+.[runner] chunk n=1 pos=4280
+[tok] 11196
+ Today[runner] chunk n=1 pos=4281
+[tok] 25
+:[runner] chunk n=1 pos=4282
+[tok] 220
+ [runner] chunk n=1 pos=4283
+[tok] 99317
+16[runner] chunk n=1 pos=4284
+[tok] 13
+.[runner] chunk n=1 pos=4285
+[tok] 18
+3[runner] chunk n=1 pos=4286
+[tok] 13
+.[runner] chunk n=1 pos=4287
+[tok] 1597
+ And[runner] chunk n=1 pos=4288
+[tok] 279
+ the[runner] chunk n=1 pos=4289
+[tok] 4274
+ sal[runner] chunk n=1 pos=4290
+[tok] 13480
+inity[runner] chunk n=1 pos=4291
+[tok] 12220
+ dropped[runner] chunk n=1 pos=4292
+[tok] 518
+ at[runner] chunk n=1 pos=4293
+[tok] 279
+ the[runner] chunk n=1 pos=4294
+[tok] 1852
+ same[runner] chunk n=1 pos=4295
+[tok] 882
+ time[runner] chunk n=1 pos=4296
+[tok] 2217
+."
+
+[runner] chunk n=1 pos=4297
+[tok] 12055
+Mar[runner] chunk n=1 pos=4298
+[tok] 59507
+isol[runner] chunk n=1 pos=4299
+[tok] 19439
+ studied[runner] chunk n=1 pos=4300
+[tok] 279
+ the[runner] chunk n=1 pos=4301
+[tok] 5109
+ numbers[runner] chunk n=1 pos=4302
+[tok] 11
+,[runner] chunk n=1 pos=4303
+[tok] 1221
+ then[runner] chunk n=1 pos=4304
+[tok] 14847
+ walked[runner] chunk n=1 pos=4305
+[tok] 311
+ to[runner] chunk n=1 pos=4306
+[tok] 279
+ the[runner] chunk n=1 pos=4307
+[tok] 3241
+ window[runner] chunk n=1 pos=4308
+[tok] 13
+.[runner] chunk n=1 pos=4309
+[tok] 576
+ The[runner] chunk n=1 pos=4310
+[tok] 41701
+ tide[runner] chunk n=1 pos=4311
+[tok] 572
+ was[runner] chunk n=1 pos=4312
+[tok] 85838
+ behaving[runner] chunk n=1 pos=4313
+[tok] 69088
+ strangely[runner] chunk n=1 pos=4314
+[tok] 2238
+ too[runner] chunk n=1 pos=4315
+[tok] 2293
+—[runner] chunk n=1 pos=4316
+[tok] 1118
+arr[runner] chunk n=1 pos=4317
+[tok] 2249
+iving[runner] chunk n=1 pos=4318
+[tok] 2937
+ later[runner] chunk n=1 pos=4319
+[tok] 1091
+ than[runner] chunk n=1 pos=4320
+[tok] 279
+ the[runner] chunk n=1 pos=4321
+[tok] 12626
+ tables[runner] chunk n=1 pos=4322
+[tok] 19113
+ predicted[runner] chunk n=1 pos=4323
+[tok] 11
+,[runner] chunk n=1 pos=4324
+[tok] 323
+ and[runner] chunk n=1 pos=4325
+[tok] 22209
+ pulling[runner] chunk n=1 pos=4326
+[tok] 1182
+ back[runner] chunk n=1 pos=4327
+[tok] 448
+ with[runner] chunk n=1 pos=4328
+[tok] 18480
+ unusual[runner] chunk n=1 pos=4329
+[tok] 5344
+ force[runner] chunk n=1 pos=4330
+[tok] 13
+.[runner] chunk n=1 pos=4331
+[tok] 24580
+ Something[runner] chunk n=1 pos=4332
+[tok] 572
+ was[runner] chunk n=1 pos=4333
+[tok] 1007
+ off[runner] chunk n=1 pos=4334
+[tok] 11
+,[runner] chunk n=1 pos=4335
+[tok] 323
+ and[runner] chunk n=1 pos=4336
+[tok] 432
+ it[runner] chunk n=1 pos=4337
+[tok] 5710
+ wasn[runner] chunk n=1 pos=4338
+[tok] 944
+'t[runner] chunk n=1 pos=4339
+[tok] 279
+ the[runner] chunk n=1 pos=4340
+[tok] 7096
+ equipment[runner] chunk n=1 pos=4341
+[tok] 382
+.
+
+[runner] chunk n=1 pos=4342
+[tok] 1
+"[runner] chunk n=1 pos=4343
+[tok] 1949
+Get[runner] chunk n=1 pos=4344
+[tok] 27690
+ Pri[runner] chunk n=1 pos=4345
+[tok] 7755
+ya[runner] chunk n=1 pos=4346
+[tok] 389
+ on[runner] chunk n=1 pos=4347
+[tok] 279
+ the[runner] chunk n=1 pos=4348
+[tok] 8885
+ radio[runner] chunk n=1 pos=4349
+[tok] 1335
+,"[runner] chunk n=1 pos=4350
+[tok] 1340
+ she
+[gen] 256 tokens in 43.03s (5.95 tok/s)  prefill 294.7 tok/s decode 8.78 tok/s
+[bench-json] {"decode_ms":29058.258797883987,"decode_steps":255,"emitted_tokens_per_second":5.949067254556052,"generated_tokens":256,"prefill_ms":13897.569139957428,"prefill_tokens":4096,"prompt_tokens":4096,"wall_seconds":43.031955943}
+[prefix] requests=1 reused=0 tokens, last request resumed at 0
+[slots] lookups=3290486 resident=21.6% streams=76320 evictions=74286 pinned=1207 h2d=560.70GB
+[slots] census hot set=1220 of 13248 entries (pin budget 1220)
+[skew] distinct=12096 requests=22779125 | top-K share of all requests: 10%:32% 25%:52% 50%:75% 100%:100%
+	Command being timed: "bwrap --ro-bind / / --dev-bind /dev /dev --proc /proc -- env HELIOS_MTP_TOKENS=1 HELIOS_BENCH_PHASES=1 /home/neron/projects/new_engine/helios-determinism/build-determinism/helios gen /home/neron/models/glm53flash_abl --cap 262144 --chunk 4096 --tokens 256 --temp 0 --ignore-eos --prefix-snap-mb 0 --prompt-ids /home/neron/projects/new_engine/helios-determinism/bench/results/determinism/prompt-4096.json"
+	User time (seconds): 57.09
+	System time (seconds): 257.60
+	Percent of CPU this job got: 221%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 2:21.93
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 98606144
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 72
+	Minor (reclaiming a frame) page faults: 25586096
+	Voluntary context switches: 196693
+	Involuntary context switches: 43221
+	Swaps: 0
+	File system inputs: 209018296
+	File system outputs: 48
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0

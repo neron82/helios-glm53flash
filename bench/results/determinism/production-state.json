@@ -1,0 +1,44 @@
+{
+  "unit": "helios-prod-restore-det-1791354357148088482",
+  "health": {
+    "status": "ok"
+  },
+  "models": {
+    "object": "list",
+    "data": [
+      {
+        "id": "glm-5.3-flash-exl3",
+        "object": "model",
+        "created": 0,
+        "owned_by": "helios",
+        "root": "glm-5.3-flash-exl3",
+        "max_tokens": 32768,
+        "context_length": 262144,
+        "supports_vision": true,
+        "capabilities": [
+          "completion",
+          "function_calling",
+          "reasoning",
+          "vision"
+        ],
+        "reasoning_effort": "high"
+      }
+    ]
+  },
+  "binary_sha256": "1a9cf7dc0557207a717746d796d224a5a94d4e99bf837c95f839061752c7a813",
+  "omnivoice": "active",
+  "pid": 713384,
+  "bge_health": {
+    "status": "ok"
+  },
+  "bge_listener": "LISTEN 0      512    0.0.0.0:7777 0.0.0.0:* users:((\"llama-server\",pid=26170,fd=20))",
+  "omnivoice_health": {
+    "status": "healthy",
+    "ready": true,
+    "model_loaded": true,
+    "uptime_s": 38828.6,
+    "model_id": "k2-fsa/OmniVoice",
+    "memory_rss_mb": 1694.7
+  },
+  "bge_pid": 26170
+}

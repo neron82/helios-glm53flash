@@ -1,0 +1,11 @@
+{
+  "base": "4408c57",
+  "reference": "e5a0c702d687f133b3734dc193ece36c0b05c261",
+  "toolkit": "CUDA 13.0.88",
+  "prompt_hashes": {
+    "prompt-4096.json": "a68b3224e8c2a9959301eebe7cd8ee23a652f29989af38831efec66a097bafa5",
+    "prompt-identity.json": "77d497ac0ffe0a6b4a2fd39a54c1aefc16a488575da2c9e864a084fab1a7c81d"
+  },
+  "fix_commit": "c2a9a07",
+  "fixed_binary_sha256": "31bf6d086dd8a292cfbed91d71307353a0a46d82ac3692bb983425d442889dfb"
+}

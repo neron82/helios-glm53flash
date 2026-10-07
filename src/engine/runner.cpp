@@ -47,6 +47,23 @@ static inline double now_ms() {
   return duration<double, std::milli>(steady_clock::now().time_since_epoch()).count();
 }
 
+
+// Diagnostic only: hashes exact device bytes by row at prefill / first decode.
+static void det_plane(const char* name, int layer, int pos, const void* ptr,
+                      size_t row_bytes, int rows, cudaStream_t stream) {
+  if (!getenv("HELIOS_DET_PLANES") || pos > 4096) return;
+  HELIOS_CUDA_CHECK(cudaStreamSynchronize(stream));
+  std::vector<unsigned char> bytes(row_bytes * rows);
+  HELIOS_CUDA_CHECK(cudaMemcpy(bytes.data(), ptr, bytes.size(), cudaMemcpyDeviceToHost));
+  fprintf(stderr, "[det-plane] pos=%d layer=%d name=%s row_bytes=%zu hashes=", pos, layer, name, row_bytes);
+  for (int row=0; row<rows; ++row) {
+    uint64_t h=14695981039346656037ull;
+    for(size_t j=0;j<row_bytes;++j) h=(h ^ bytes[row*row_bytes+j])*1099511628211ull;
+    fprintf(stderr, "%s%016llx", row?",":"", (unsigned long long)h);
+  }
+  fprintf(stderr, "\n");
+}
+
 // ---------------------------------------------------------------- init
 bool Runner::init(Model& m, Cache& c, SlotMgr& sm, Tokenizer* tk, int max_chunk) {
   m_ = &m; c_ = &c; sm_ = &sm; tk_ = tk;
@@ -142,6 +159,8 @@ bool Runner::init(Model& m, Cache& c, SlotMgr& sm, Tokenizer* tk, int max_chunk)
   w1.ec = (int64_t*)A1((size_t)(m.cfg.n_expert + 2) * 8);
   w1.tsorted = (int64_t*)A1((size_t)M * 8 * 8);
   w1.wsorted = (half*)A1((size_t)M * 8 * 2);
+  w1.moe_contributions = (float*)A1((size_t)M * 8 * 4096 * 4);
+  w1.route_to_sorted = (int64_t*)A1((size_t)M * 8 * 8);
   w1.perm_ws = (int64_t*)A1(3 * (m.cfg.n_expert + 2) * 8);
   w1.tables = (void**)A1(9 * m.cfg.n_expert * sizeof(void*));
   {   // zeroed fallback slab: if an expert can never be made resident, the kernel reads zeros from
@@ -425,6 +444,10 @@ void Runner::kda_layer(Layer& L, int n, int pos) {
                                  nullptr, (const bfloat16*)conv_w, nullptr,
                                  (bfloat16*)w0.conv_out_bf16, 1, 24576, n, 4, 4, true, false, s);
   kmark(4);
+  det_plane("conv_out", L.index, pos, w0.conv_out_bf16, 24576*2, n, s);
+  det_plane("gate", L.index, pos, w0.kda_g, 8192*4, n, s);
+  det_plane("beta", L.index, pos, w0.beta_bf16, 64*2, n, s);
+  det_plane("rec_before", L.index, pos, c_->kda_rec(kda_ord), 128*4, 64*128, s);
   // 5) delta rule recurrence (bf16 out, fp32 state)
   // L2 persistence for the recurrent state. The state is 4MB per layer and is read *and* written for
   // every token, i.e. 8MB/token/layer = 8.5us at DRAM bandwidth - which is what the scan costs
@@ -446,6 +469,8 @@ void Runner::kda_layer(Layer& L, int n, int pos) {
                                        (const bfloat16*)w0.beta_bf16, c_->kda_rec(kda_ord),
                                        (bfloat16*)w0.kda_rec_bf16, 1, n, 64, 64, 128, 128,
                                        1, nullptr, true, false, s);
+  det_plane("rec_output", L.index, pos, w0.kda_rec_bf16, 8192*2, n, s);
+  det_plane("rec_after", L.index, pos, c_->kda_rec(kda_ord), 128*4, 64*128, s);
   if (const char* dd = getenv("HELIOS_DUMP_KDA")) {   // debug: dump stage tensors
     auto w = [&](const char* n, const void* p, size_t bytes) {
       FILE* f = fopen((std::string(dd) + "." + n).c_str(), "wb");
@@ -736,7 +761,7 @@ void Runner::moe_ffn(Layer& L, int n) {
   aux::routing_ds3_nogroup(w1.router_scores, L.moe_w.router_bias, w1.topk_i64, w1.topk_w,
                            n, E, K, m_->cfg.routed_scale, true, aux::ROUTING_ACT_SIGMOID, s1);
   chk1("routing topk");
-  glue::moe_permute(w1.topk_i64, w1.topk_w, n, K, E, w1.ec, w1.tsorted, w1.wsorted, w1.perm_ws, s1);
+  glue::moe_permute(w1.topk_i64, w1.topk_w, n, K, E, w1.ec, w1.tsorted, w1.wsorted, w1.perm_ws, s1, w1.route_to_sorted);
   chk1("moe_permute");
   static std::vector<int64_t> dev_cnt(288);
   HELIOS_CUDA_CHECK(cudaMemcpyAsync(w0.host_ids, w1.topk_i64, (size_t)n * K * 8,
@@ -893,7 +918,8 @@ void Runner::moe_ffn(Layer& L, int n) {
     exl3::moe_grouped(w1.x, w1.y, w1.ec, w1.tsorted, w1.wsorted, w1.moe_tg, w1.moe_tu,
                       w1.moe_ig, w1.moe_iu, tb, n, 4096, 2048, E, K, moe_plan_.max_tokens_per_expert,
                       moe_plan_.concurrency, expert.bits[0], expert.bits[1], expert.bits[2], false, true, m_->cfg.swiglu_limit,
-                      MOE_ACT_SILU, active, s1);
+                      MOE_ACT_SILU, active, s1, w1.moe_contributions);
+    glue::moe_reduce_sorted(w1.y, w1.moe_contributions, w1.route_to_sorted, n, K, 4096, s1);
     HELIOS_CUDA_CHECK(cudaGetLastError());
   }
   if (dbg_sync()) {
@@ -986,6 +1012,7 @@ void Runner::layer_step(Layer& L, int n, int pos, float* streams) {
   Device& g0 = Engine::instance().gpu(0);
   DevGuard guard(g0.phys_idx());
   cudaStream_t s = s0_stream();
+  det_plane("layer_input", L.index, pos, streams, 4*4096*4, n, s);
   {
     // attention site
     aux::hc_mix(streams, L.hc.fn_attn16, true, L.hc.base_attn, L.hc.scale_attn, n, 4, 4096,
@@ -1003,6 +1030,7 @@ void Runner::layer_step(Layer& L, int n, int pos, float* streams) {
       else mla_layer(L, n, pos);
     }
     if (prof) { double a1 = now3(); t_attn += a1 - p0; p0 = a1; }
+    det_plane("attn_output", L.index, pos, w0.attn_out16, 4096*2, n, s);
     DBGSYNC(s, "attn layer");
     aux::hc_apply(streams, w0.attn_out16, true, w0.hc_post, w0.hc_comb, n, 4, 4096, s);
     DBGSYNC(s, "hc_apply attn");
@@ -1016,6 +1044,7 @@ void Runner::layer_step(Layer& L, int n, int pos, float* streams) {
     }
     if (prof) { double f0 = now3(); t_hc += f0 - p0; p0 = f0; }
     if (!getenv("HELIOS_LM_SKIP_MOE")) ffn_layer(L, n, pos);
+    det_plane("ffn_output", L.index, pos, w0.ffn_out16, 4096*2, n, s);
     DBGSYNC(s, "ffn layer");
     if (prof) { double f1 = now3(); t_ffn += f1 - p0; p0 = f1; }
     if (prof) {

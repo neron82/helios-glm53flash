@@ -1,0 +1,16 @@
+Internal ctest changing into directory: /home/neron/projects/new_engine/helios-determinism/build-determinism
+Test project /home/neron/projects/new_engine/helios-determinism/build-determinism
+    Start 1: expert_layout
+1/5 Test #1: expert_layout ....................   Passed    0.01 sec
+    Start 2: prefix_policy
+2/5 Test #2: prefix_policy ....................   Passed    0.00 sec
+    Start 3: utf8
+3/5 Test #3: utf8 .............................   Passed    0.00 sec
+    Start 4: chat_protocol
+4/5 Test #4: chat_protocol ....................   Passed    0.00 sec
+    Start 5: vision_support
+5/5 Test #5: vision_support ...................   Passed    0.00 sec
+
+100% tests passed, 0 tests failed out of 5
+
+Total Test time (real) =   0.02 sec

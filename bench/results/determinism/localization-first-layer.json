@@ -1,0 +1,266 @@
+[
+  {
+    "process": 1,
+    "log": "bench/results/determinism/logs/diagnostic-before-r1.log",
+    "input_and_output": [
+      {
+        "pos": 0,
+        "layer": 0,
+        "name": "layer_input",
+        "row_bytes": 65536,
+        "row_count": 4096,
+        "all_row_hashes_sha256": "97c94b27cc3740bcf9897247b7bbadc13ba7fbcc3ae528702917768eeaed42fb",
+        "first_eight_hashes": [
+          "bd10d20f0779b16d",
+          "e8958295975fa62d",
+          "22d8d42da2df0625",
+          "b84382a9c9ee5b85",
+          "3a48e1b790a08525",
+          "d32ed5eb131e16a5",
+          "c6ed0f348f3daf5d",
+          "f958f9ab2ba3764d"
+        ]
+      },
+      {
+        "pos": 0,
+        "layer": 0,
+        "name": "conv_out",
+        "row_bytes": 49152,
+        "row_count": 4096,
+        "all_row_hashes_sha256": "1b9b50a0bc877f4b7b37ffd9f11927f1854345f3e849b1b8b4536321d333fb45",
+        "first_eight_hashes": [
+          "d58972be17720ba8",
+          "34452561085717f6",
+          "62d0cf68d1acb5af",
+          "72122fd2e8f8e715",
+          "5cef99ff30abbd7d",
+          "584b18af3f058531",
+          "6545ce2468a5146d",
+          "cd2409d978333f0b"
+        ]
+      },
+      {
+        "pos": 0,
+        "layer": 0,
+        "name": "gate",
+        "row_bytes": 32768,
+        "row_count": 4096,
+        "all_row_hashes_sha256": "9db68b8b1357b1aaa46664fbfef529f52a9dbc5426c76bb22fe658ade27bd174",
+        "first_eight_hashes": [
+          "e27414cee4962643",
+          "83f608fef4d3810c",
+          "46b90947051a7545",
+          "2cc5642995d674aa",
+          "16a264287adcd382",
+          "386de9d69a4a5ac7",
+          "b52dab9e2efd01b0",
+          "8b4587940cb1e486"
+        ]
+      },
+      {
+        "pos": 0,
+        "layer": 0,
+        "name": "beta",
+        "row_bytes": 128,
+        "row_count": 4096,
+        "all_row_hashes_sha256": "99d83519e609bd2f46b71e23ff15a3083d36d6bb94aabdcd105b7a257437e132",
+        "first_eight_hashes": [
+          "018838b77beb9433",
+          "e55d02631ef0a439",
+          "0ee52e59853234e9",
+          "3049d63972fd0c70",
+          "dc8635a9a740ae7c",
+          "5bb04e946e73a24e",
+          "fd6f5d367a66fa63",
+          "a4770067318f406d"
+        ]
+      },
+      {
+        "pos": 0,
+        "layer": 0,
+        "name": "rec_before",
+        "row_bytes": 512,
+        "row_count": 8192,
+        "all_row_hashes_sha256": "bcc10f142be9707bf04c12bae7473da722e21387d369321201c054617724a7e3",
+        "first_eight_hashes": [
+          "7da144b97d054b25",
+          "7da144b97d054b25",
+          "7da144b97d054b25",
+          "7da144b97d054b25",
+          "7da144b97d054b25",
+          "7da144b97d054b25",
+          "7da144b97d054b25",
+          "7da144b97d054b25"
+        ]
+      },
+      {
+        "pos": 0,
+        "layer": 0,
+        "name": "rec_output",
+        "row_bytes": 16384,
+        "row_count": 4096,
+        "all_row_hashes_sha256": "d93f0cc6d93b3739a498981d713619d303634d8d4527c71a837412ec67601391",
+        "first_eight_hashes": [
+          "0b1777faf232046d",
+          "5a10fb6c34ce0013",
+          "da1c6f36012578c6",
+          "20f5c3844aa7d904",
+          "7ed751a7e2b817f6",
+          "3f88368354f95194",
+          "3f5bbf394eaef567",
+          "d300c69c79491478"
+        ]
+      },
+      {
+        "pos": 0,
+        "layer": 0,
+        "name": "rec_after",
+        "row_bytes": 512,
+        "row_count": 8192,
+        "all_row_hashes_sha256": "89e4ed4bcee6f97034140d8d614b974436a14d70d1bb5b60719055c48f593dac",
+        "first_eight_hashes": [
+          "88a54e40299db2cb",
+          "c51b4b3045723933",
+          "b999b04c9aaeee88",
+          "b0c2cff9526b6568",
+          "76b33ac131ce0970",
+          "b1f9ba3c38cf77c0",
+          "76b93c896d97347c",
+          "5eeac9085be8fe2c"
+        ]
+      }
+    ]
+  },
+  {
+    "process": 2,
+    "log": "bench/results/determinism/logs/diagnostic-before-r2.log",
+    "input_and_output": [
+      {
+        "pos": 0,
+        "layer": 0,
+        "name": "layer_input",
+        "row_bytes": 65536,
+        "row_count": 4096,
+        "all_row_hashes_sha256": "97c94b27cc3740bcf9897247b7bbadc13ba7fbcc3ae528702917768eeaed42fb",
+        "first_eight_hashes": [
+          "bd10d20f0779b16d",
+          "e8958295975fa62d",
+          "22d8d42da2df0625",
+          "b84382a9c9ee5b85",
+          "3a48e1b790a08525",
+          "d32ed5eb131e16a5",
+          "c6ed0f348f3daf5d",
+          "f958f9ab2ba3764d"
+        ]
+      },
+      {
+        "pos": 0,
+        "layer": 0,
+        "name": "conv_out",
+        "row_bytes": 49152,
+        "row_count": 4096,
+        "all_row_hashes_sha256": "1b9b50a0bc877f4b7b37ffd9f11927f1854345f3e849b1b8b4536321d333fb45",
+        "first_eight_hashes": [
+          "d58972be17720ba8",
+          "34452561085717f6",
+          "62d0cf68d1acb5af",
+          "72122fd2e8f8e715",
+          "5cef99ff30abbd7d",
+          "584b18af3f058531",
+          "6545ce2468a5146d",
+          "cd2409d978333f0b"
+        ]
+      },
+      {
+        "pos": 0,
+        "layer": 0,
+        "name": "gate",
+        "row_bytes": 32768,
+        "row_count": 4096,
+        "all_row_hashes_sha256": "9db68b8b1357b1aaa46664fbfef529f52a9dbc5426c76bb22fe658ade27bd174",
+        "first_eight_hashes": [
+          "e27414cee4962643",
+          "83f608fef4d3810c",
+          "46b90947051a7545",
+          "2cc5642995d674aa",
+          "16a264287adcd382",
+          "386de9d69a4a5ac7",
+          "b52dab9e2efd01b0",
+          "8b4587940cb1e486"
+        ]
+      },
+      {
+        "pos": 0,
+        "layer": 0,
+        "name": "beta",
+        "row_bytes": 128,
+        "row_count": 4096,
+        "all_row_hashes_sha256": "99d83519e609bd2f46b71e23ff15a3083d36d6bb94aabdcd105b7a257437e132",
+        "first_eight_hashes": [
+          "018838b77beb9433",
+          "e55d02631ef0a439",
+          "0ee52e59853234e9",
+          "3049d63972fd0c70",
+          "dc8635a9a740ae7c",
+          "5bb04e946e73a24e",
+          "fd6f5d367a66fa63",
+          "a4770067318f406d"
+        ]
+      },
+      {
+        "pos": 0,
+        "layer": 0,
+        "name": "rec_before",
+        "row_bytes": 512,
+        "row_count": 8192,
+        "all_row_hashes_sha256": "bcc10f142be9707bf04c12bae7473da722e21387d369321201c054617724a7e3",
+        "first_eight_hashes": [
+          "7da144b97d054b25",
+          "7da144b97d054b25",
+          "7da144b97d054b25",
+          "7da144b97d054b25",
+          "7da144b97d054b25",
+          "7da144b97d054b25",
+          "7da144b97d054b25",
+          "7da144b97d054b25"
+        ]
+      },
+      {
+        "pos": 0,
+        "layer": 0,
+        "name": "rec_output",
+        "row_bytes": 16384,
+        "row_count": 4096,
+        "all_row_hashes_sha256": "b25ef29b6c9e2808637fb5827e8f02c7b118c674f3ee769fce676fb953ec1898",
+        "first_eight_hashes": [
+          "0b1777faf232046d",
+          "5a10fb6c34ce0013",
+          "da1c6f36012578c6",
+          "8cf0f4bf7f93682a",
+          "7ed751a7e2b817f6",
+          "3f88368354f95194",
+          "3f5bbf394eaef567",
+          "370848d964af3e2d"
+        ]
+      },
+      {
+        "pos": 0,
+        "layer": 0,
+        "name": "rec_after",
+        "row_bytes": 512,
+        "row_count": 8192,
+        "all_row_hashes_sha256": "75531bfe97f926c4c5641cb9970c7801a1e2c2b6ae6d175c1195b60d42aa5a15",
+        "first_eight_hashes": [
+          "77b0d4f4846bd903",
+          "9fc4c22045b8c845",
+          "2999c21415ef98a4",
+          "9f3cd557b84ada81",
+          "d46df6fafd3e9fca",
+          "5a4efa7d360fd4b1",
+          "76b93c896d97347c",
+          "a307260a92f77fce"
+        ]
+      }
+    ]
+  }
+]

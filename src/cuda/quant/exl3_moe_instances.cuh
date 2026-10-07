@@ -8,7 +8,7 @@
 #include "exl3_moe_kernel.cuh"
 
 // Kernel function pointer type: the launchers take the address of a __global__ kernel
-typedef void (*fp_exl3_moe_kernel)(const half*, half*, half*, half*, half*, float*, const uint16_t**, const half**, const half**, const uint16_t**, const half**, const half**, const uint16_t**, const half**, const half**, const int64_t*, const int64_t*, const half*, int, int, int, int, int, int, float, int, int, int, int, int*);
+typedef void (*fp_exl3_moe_kernel)(const half*, half*, half*, half*, half*, float*, const uint16_t**, const half**, const half**, const uint16_t**, const half**, const half**, const uint16_t**, const half**, const half**, const int64_t*, const int64_t*, const half*, int, int, int, int, int, int, float, int, int, int, int, int*, float*);
 
 #define DECL_GETTER(K_, n_, cb_) \
     fp_exl3_moe_kernel exl3_moe_kernel_k##K_##_n##n_##_cb##cb_();

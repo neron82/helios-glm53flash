@@ -1,0 +1,677 @@
+107374182400
+118111600640
+1073741824
+[device] gpu0 (0000:07:00.0) H2D 2.86 GB/s
+[device] gpu1 (0000:2B:00.0) H2D 26.31 GB/s
+[model] experts L3 bits=3/3/3 slab=9.035MB arena_offset=0
+[model] experts L4 bits=3/3/3 slab=9.035MB arena_offset=2728581120
+[model] experts L5 bits=3/3/3 slab=9.035MB arena_offset=5457162240
+[model] experts L6 bits=3/3/3 slab=9.035MB arena_offset=8185743360
+[model] experts L7 bits=3/3/3 slab=9.035MB arena_offset=10914324480
+[model] experts L8 bits=3/3/3 slab=9.035MB arena_offset=13642905600
+[model] experts L9 bits=3/3/3 slab=9.035MB arena_offset=16371486720
+[model] experts L10 bits=3/3/3 slab=9.035MB arena_offset=19100067840
+[model] experts L11 bits=3/3/3 slab=9.035MB arena_offset=21828648960
+[model] experts L12 bits=2/2/2 slab=6.035MB arena_offset=24557230080
+[model] experts L13 bits=2/2/2 slab=6.035MB arena_offset=26379841536
+[model] experts L14 bits=2/2/2 slab=6.035MB arena_offset=28202452992
+[model] experts L15 bits=2/2/2 slab=6.035MB arena_offset=30025064448
+[model] experts L16 bits=2/2/2 slab=6.035MB arena_offset=31847675904
+[model] experts L17 bits=2/2/2 slab=6.035MB arena_offset=33670287360
+[model] experts L18 bits=2/2/2 slab=6.035MB arena_offset=35492898816
+[model] experts L19 bits=2/2/2 slab=6.035MB arena_offset=37315510272
+[model] experts L20 bits=2/2/2 slab=6.035MB arena_offset=39138121728
+[model] experts L21 bits=2/2/2 slab=6.035MB arena_offset=40960733184
+[model] experts L22 bits=2/2/2 slab=6.035MB arena_offset=42783344640
+[model] experts L23 bits=2/2/2 slab=6.035MB arena_offset=44605956096
+[model] experts L24 bits=2/2/2 slab=6.035MB arena_offset=46428567552
+[model] experts L25 bits=2/2/2 slab=6.035MB arena_offset=48251179008
+[model] experts L26 bits=2/2/2 slab=6.035MB arena_offset=50073790464
+[model] experts L27 bits=2/2/2 slab=6.035MB arena_offset=51896401920
+[model] experts L28 bits=2/2/2 slab=6.035MB arena_offset=53719013376
+[model] experts L29 bits=2/2/2 slab=6.035MB arena_offset=55541624832
+[model] experts L30 bits=2/2/2 slab=6.035MB arena_offset=57364236288
+[model] experts L31 bits=2/2/2 slab=6.035MB arena_offset=59186847744
+[model] experts L32 bits=2/2/2 slab=6.035MB arena_offset=61009459200
+[model] experts L33 bits=2/2/2 slab=6.035MB arena_offset=62832070656
+[model] experts L34 bits=3/3/3 slab=9.035MB arena_offset=64654682112
+[model] experts L35 bits=3/3/3 slab=9.035MB arena_offset=67383263232
+[model] experts L36 bits=3/3/3 slab=9.035MB arena_offset=70111844352
+[model] experts L37 bits=3/3/3 slab=9.035MB arena_offset=72840425472
+[model] experts L38 bits=3/3/3 slab=9.035MB arena_offset=75569006592
+[model] experts L39 bits=3/3/3 slab=9.035MB arena_offset=78297587712
+[model] experts L40 bits=3/3/3 slab=9.035MB arena_offset=81026168832
+[model] experts L41 bits=3/3/3 slab=9.035MB arena_offset=83754749952
+[model] experts L42 bits=3/3/3 slab=9.035MB arena_offset=86483331072
+[model] experts L43 bits=3/3/3 slab=9.035MB arena_offset=89211912192
+[model] experts L44 bits=3/3/3 slab=9.035MB arena_offset=91940493312
+[model] experts L45 bits=4/4/4 slab=12.035MB arena_offset=94669074432
+[model] arena pinned in 46.7 s
+[model] alloc dev0 1210.0 MB (gpu0 total 0.00 GB)
+[model] alloc dev0 453.8 MB (gpu0 total 1.18 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 1.63 GB)
+[model] alloc dev0 18.0 MB (gpu0 total 1.69 GB)
+[model] alloc dev0 18.0 MB (gpu0 total 1.71 GB)
+[model] alloc dev0 18.0 MB (gpu0 total 1.73 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 1.75 GB)
+[model] alloc dev0 18.0 MB (gpu0 total 1.82 GB)
+[model] alloc dev0 18.0 MB (gpu0 total 1.84 GB)
+[model] alloc dev0 18.0 MB (gpu0 total 1.86 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 1.88 GB)
+[model] alloc dev0 18.0 MB (gpu0 total 1.95 GB)
+[model] alloc dev0 18.0 MB (gpu0 total 1.96 GB)
+[model] alloc dev0 18.0 MB (gpu0 total 1.98 GB)
+[model] alloc dev0 32.0 MB (gpu0 total 2.02 GB)
+[model] alloc dev0 32.0 MB (gpu0 total 2.05 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 2.10 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 2.19 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 2.27 GB)
+[model] alloc dev0 32.0 MB (gpu0 total 2.38 GB)
+[model] alloc dev0 32.0 MB (gpu0 total 2.41 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 2.46 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 2.54 GB)
+[model] al[runner] chunk n=51 pos=0
+[tok] 98965
+loc dev0 48.0 MB (gpu0 total 2.63 GB)
+[model] alloc dev0 32.0 MB (gpu0 total 2.73 GB)
+[model] alloc dev0 32.0 MB (gpu0 total 2.76 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 2.81 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 2.90 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 2.99 GB)
+[model] alloc dev0 32.0 MB (gpu0 total 3.09 GB)
+[model] alloc dev0 32.0 MB (gpu0 total 3.12 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 3.17 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 3.26 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 3.34 GB)
+[model] alloc dev0 32.0 MB (gpu0 total 3.44 GB)
+[model] alloc dev0 32.0 MB (gpu0 total 3.47 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 3.53 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 3.61 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 3.70 GB)
+[model] alloc dev0 32.0 MB (gpu0 total 3.80 GB)
+[model] alloc dev0 32.0 MB (gpu0 total 3.83 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 3.88 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 3.97 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 4.05 GB)
+[model] alloc dev0 32.0 MB (gpu0 total 4.15 GB)
+[model] alloc dev0 32.0 MB (gpu0 total 4.18 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 4.24 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 4.32 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 4.41 GB)
+[model] alloc dev0 32.0 MB (gpu0 total 4.51 GB)
+[model] alloc dev0 32.0 MB (gpu0 total 4.54 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 4.59 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 4.68 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 4.76 GB)
+[model] alloc dev0 32.0 MB (gpu0 total 4.86 GB)
+[model] alloc dev0 32.0 MB (gpu0 total 4.89 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 4.95 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 5.03 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 5.12 GB)
+[model] alloc dev0 32.0 MB (gpu0 total 5.22 GB)
+[model] alloc dev0 32.0 MB (gpu0 total 5.25 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 5.30 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 5.39 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 5.47 GB)
+[model] alloc dev0 32.0 MB (gpu0 total 5.57 GB)
+[model] alloc dev0 32.0 MB (gpu0 total 5.61 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 5.66 GB)
+[model] alloc dev0 18.0 MB (gpu0 total 5.75 GB)
+[model] alloc dev0 48.0 MB (gpu0 total 5.77 GB)
+[model] alloc dev0 32.0 MB (gpu0 total 5.81 GB)
+[model] alloc dev0 20.0 MB (gpu0 total 5.87 GB)
+[model] alloc dev1 18377.9 MB (gpu1 total 0.09 GB)
+[model] jobs=150637 arena=91.6GB gpu0=5.89GB gpu1=18.04GB slots=2034
+[model] load time 20.7 s (5.6 GB/s)
+[verify] 256 slab pieces checked, 0 mismatches
+[verify-gpu] 507 device tensors checked, 0 mismatches
+[tok] vocab=154856 merges=321649 added=36 eos=154820
+[cache] cap=262144 tokens mla=11 kda=34 kv=3.08GB total=4.27GB maxM=4096 idx_ring=4100 rows
+[slots] census loaded: /home/neron/models/glm53flash_abl/.helios.census (22682170 requests over 46 x 288)
+[slots] reusing pool: 2034 slots x 9.035 MB = 17.95 GB
+[runner] wuv^T built for 11 MLA layers
+[runner] KDA low-rank transposes built: 221.0 MB
+[runner] max_chunk=4096 moe_concurrency=8 gpu1_moe_scratch=768.0 MB
+[runner] prefix cache: snapshots disabled (extension-only reuse)
+[mem] gpu0 used 17.04 GB free 6.52 (pool 0.00) | gpu1 used 21.11 GB free 2.44 (pool 0.00)
+[gen] prompt tokens=51
+11[runner] chunk n=1 pos=51
+[tok] 11
+,[runner] chunk n=1 pos=52
+[tok] 98886
+12[runner] chunk n=1 pos=53
+[tok] 11
+,[runner] chunk n=1 pos=54
+[tok] 99366
+13[runner] chunk n=1 pos=55
+[tok] 11
+,[runner] chunk n=1 pos=56
+[tok] 99367
+14[runner] chunk n=1 pos=57
+[tok] 11
+,[runner] chunk n=1 pos=58
+[tok] 99082
+15[runner] chunk n=1 pos=59
+[tok] 11
+,[runner] chunk n=1 pos=60
+[tok] 99317
+16[runner] chunk n=1 pos=61
+[tok] 11
+,[runner] chunk n=1 pos=62
+[tok] 99419
+17[runner] chunk n=1 pos=63
+[tok] 11
+,[runner] chunk n=1 pos=64
+[tok] 99243
+18[runner] chunk n=1 pos=65
+[tok] 11
+,[runner] chunk n=1 pos=66
+[tok] 98729
+19[runner] chunk n=1 pos=67
+[tok] 11
+,[runner] chunk n=1 pos=68
+[tok] 98360
+20[runner] chunk n=1 pos=69
+[tok] 11
+,[runner] chunk n=1 pos=70
+[tok] 99146
+21[runner] chunk n=1 pos=71
+[tok] 11
+,[runner] chunk n=1 pos=72
+[tok] 99241
+22[runner] chunk n=1 pos=73
+[tok] 11
+,[runner] chunk n=1 pos=74
+[tok] 99619
+23[runner] chunk n=1 pos=75
+[tok] 11
+,[runner] chunk n=1 pos=76
+[tok] 99590
+24[runner] chunk n=1 pos=77
+[tok] 11
+,[runner] chunk n=1 pos=78
+[tok] 99446
+25[runner] chunk n=1 pos=79
+[tok] 11
+,[runner] chunk n=1 pos=80
+[tok] 99916
+26[runner] chunk n=1 pos=81
+[tok] 11
+,[runner] chunk n=1 pos=82
+[tok] 99951
+27[runner] chunk n=1 pos=83
+[tok] 11
+,[runner] chunk n=1 pos=84
+[tok] 99869
+28[runner] chunk n=1 pos=85
+[tok] 11
+,[runner] chunk n=1 pos=86
+[tok] 100104
+29[runner] chunk n=1 pos=87
+[tok] 11
+,[runner] chunk n=1 pos=88
+[tok] 99064
+30[runner] chunk n=1 pos=89
+[tok] 11
+,[runner] chunk n=1 pos=90
+[tok] 100557
+31[runner] chunk n=1 pos=91
+[tok] 11
+,[runner] chunk n=1 pos=92
+[tok] 101175
+32[runner] chunk n=1 pos=93
+[tok] 11
+,[runner] chunk n=1 pos=94
+[tok] 100702
+33[runner] chunk n=1 pos=95
+[tok] 11
+,[runner] chunk n=1 pos=96
+[tok] 101135
+34[runner] chunk n=1 pos=97
+[tok] 11
+,[runner] chunk n=1 pos=98
+[tok] 100235
+35[runner] chunk n=1 pos=99
+[tok] 11
+,[runner] chunk n=1 pos=100
+[tok] 100632
+36[runner] chunk n=1 pos=101
+[tok] 11
+,[runner] chunk n=1 pos=102
+[tok] 101140
+37[runner] chunk n=1 pos=103
+[tok] 11
+,[runner] chunk n=1 pos=104
+[tok] 100919
+38[runner] chunk n=1 pos=105
+[tok] 11
+,[runner] chunk n=1 pos=106
+[tok] 101294
+39[runner] chunk n=1 pos=107
+[tok] 11
+,[runner] chunk n=1 pos=108
+[tok] 99698
+40[runner] chunk n=1 pos=109
+[tok] 11
+,[runner] chunk n=1 pos=110
+[tok] 102340
+41[runner] chunk n=1 pos=111
+[tok] 11
+,[runner] chunk n=1 pos=112
+[tok] 101961
+42[runner] chunk n=1 pos=113
+[tok] 11
+,[runner] chunk n=1 pos=114
+[tok] 102088
+43[runner] chunk n=1 pos=115
+[tok] 11
+,[runner] chunk n=1 pos=116
+[tok] 101723
+44[runner] chunk n=1 pos=117
+[tok] 11
+,[runner] chunk n=1 pos=118
+[tok] 100461
+45[runner] chunk n=1 pos=119
+[tok] 11
+,[runner] chunk n=1 pos=120
+[tok] 101562
+46[runner] chunk n=1 pos=121
+[tok] 11
+,[runner] chunk n=1 pos=122
+[tok] 101655
+47[runner] chunk n=1 pos=123
+[tok] 11
+,[runner] chunk n=1 pos=124
+[tok] 100933
+48[runner] chunk n=1 pos=125
+[tok] 11
+,[runner] chunk n=1 pos=126
+[tok] 101474
+49[runner] chunk n=1 pos=127
+[tok] 11
+,[runner] chunk n=1 pos=128
+[tok] 99200
+50[runner] chunk n=1 pos=129
+[tok] 11
+,[runner] chunk n=1 pos=130
+[tok] 102624
+51[runner] chunk n=1 pos=131
+[tok] 11
+,[runner] chunk n=1 pos=132
+[tok] 102501
+52[runner] chunk n=1 pos=133
+[tok] 11
+,[runner] chunk n=1 pos=134
+[tok] 102721
+53[runner] chunk n=1 pos=135
+[tok] 11
+,[runner] chunk n=1 pos=136
+[tok] 102856
+54[runner] chunk n=1 pos=137
+[tok] 11
+,[runner] chunk n=1 pos=138
+[tok] 101130
+55[runner] chunk n=1 pos=139
+[tok] 11
+,[runner] chunk n=1 pos=140
+[tok] 101917
+56[runner] chunk n=1 pos=141
+[tok] 11
+,[runner] chunk n=1 pos=142
+[tok] 102486
+57[runner] chunk n=1 pos=143
+[tok] 11
+,[runner] chunk n=1 pos=144
+[tok] 101729
+58[runner] chunk n=1 pos=145
+[tok] 11
+,[runner] chunk n=1 pos=146
+[tok] 102573
+59[runner] chunk n=1 pos=147
+[tok] 11
+,[runner] chunk n=1 pos=148
+[tok] 99618
+60[runner] chunk n=1 pos=149
+[tok] 11
+,[runner] chunk n=1 pos=150
+[tok] 103595
+61[runner] chunk n=1 pos=151
+[tok] 11
+,[runner] chunk n=1 pos=152
+[tok] 103319
+62[runner] chunk n=1 pos=153
+[tok] 11
+,[runner] chunk n=1 pos=154
+[tok] 103302
+63[runner] chunk n=1 pos=155
+[tok] 11
+,[runner] chunk n=1 pos=156
+[tok] 102636
+64[runner] chunk n=1 pos=157
+[tok] 11
+,[runner] chunk n=1 pos=158
+[tok] 101411
+65[runner] chunk n=1 pos=159
+[tok] 11
+,[runner] chunk n=1 pos=160
+[tok] 101478
+66[runner] chunk n=1 pos=161
+[tok] 11
+,[runner] chunk n=1 pos=162
+[tok] 102952
+67[runner] chunk n=1 pos=163
+[tok] 11
+,[runner] chunk n=1 pos=164
+[tok] 101840
+68[runner] chunk n=1 pos=165
+[tok] 11
+,[runner] chunk n=1 pos=166
+[tok] 103093
+69[runner] chunk n=1 pos=167
+[tok] 11
+,[runner] chunk n=1 pos=168
+[tok] 100096
+70[runner] chunk n=1 pos=169
+[tok] 11
+,[runner] chunk n=1 pos=170
+[tok] 103437
+71[runner] chunk n=1 pos=171
+[tok] 11
+,[runner] chunk n=1 pos=172
+[tok] 102650
+72[runner] chunk n=1 pos=173
+[tok] 11
+,[runner] chunk n=1 pos=174
+[tok] 103388
+73[runner] chunk n=1 pos=175
+[tok] 11
+,[runner] chunk n=1 pos=176
+[tok] 103498
+74[runner] chunk n=1 pos=177
+[tok] 11
+,[runner] chunk n=1 pos=178
+[tok] 100899
+75[runner] chunk n=1 pos=179
+[tok] 11
+,[runner] chunk n=1 pos=180
+[tok] 102269
+76[runner] chunk n=1 pos=181
+[tok] 11
+,[runner] chunk n=1 pos=182
+[tok] 102114
+77[runner] chunk n=1 pos=183
+[tok] 11
+,[runner] chunk n=1 pos=184
+[tok] 100928
+78[runner] chunk n=1 pos=185
+[tok] 11
+,[runner] chunk n=1 pos=186
+[tok] 102626
+79[runner] chunk n=1 pos=187
+[tok] 11
+,[runner] chunk n=1 pos=188
+[tok] 99695
+80[runner] chunk n=1 pos=189
+[tok] 11
+,[runner] chunk n=1 pos=190
+[tok] 104340
+81[runner] chunk n=1 pos=191
+[tok] 11
+,[runner] chunk n=1 pos=192
+[tok] 104160
+82[runner] chunk n=1 pos=193
+[tok] 11
+,[runner] chunk n=1 pos=194
+[tok] 104127
+83[runner] chunk n=1 pos=195
+[tok] 11
+,[runner] chunk n=1 pos=196
+[tok] 104029
+84[runner] chunk n=1 pos=197
+[tok] 11
+,[runner] chunk n=1 pos=198
+[tok] 102284
+85[runner] chunk n=1 pos=199
+[tok] 11
+,[runner] chunk n=1 pos=200
+[tok] 102807
+86[runner] chunk n=1 pos=201
+[tok] 11
+,[runner] chunk n=1 pos=202
+[tok] 103878
+87[runner] chunk n=1 pos=203
+[tok] 11
+,[runner] chunk n=1 pos=204
+[tok] 101252
+88[runner] chunk n=1 pos=205
+[tok] 11
+,[runner] chunk n=1 pos=206
+[tok] 103502
+89[runner] chunk n=1 pos=207
+[tok] 11
+,[runner] chunk n=1 pos=208
+[tok] 100067
+90[runner] chunk n=1 pos=209
+[tok] 11
+,[runner] chunk n=1 pos=210
+[tok] 104327
+91[runner] chunk n=1 pos=211
+[tok] 11
+,[runner] chunk n=1 pos=212
+[tok] 103825
+92[runner] chunk n=1 pos=213
+[tok] 11
+,[runner] chunk n=1 pos=214
+[tok] 103946
+93[runner] chunk n=1 pos=215
+[tok] 11
+,[runner] chunk n=1 pos=216
+[tok] 103992
+94[runner] chunk n=1 pos=217
+[tok] 11
+,[runner] chunk n=1 pos=218
+[tok] 101804
+95[runner] chunk n=1 pos=219
+[tok] 11
+,[runner] chunk n=1 pos=220
+[tok] 102487
+96[runner] chunk n=1 pos=221
+[tok] 11
+,[runner] chunk n=1 pos=222
+[tok] 103205
+97[runner] chunk n=1 pos=223
+[tok] 11
+,[runner] chunk n=1 pos=224
+[tok] 101663
+98[runner] chunk n=1 pos=225
+[tok] 11
+,[runner] chunk n=1 pos=226
+[tok] 100809
+99[runner] chunk n=1 pos=227
+[tok] 11
+,[runner] chunk n=1 pos=228
+[tok] 99457
+100[runner] chunk n=1 pos=229
+[tok] 11
+,[runner] chunk n=1 pos=230
+[tok] 107609
+101[runner] chunk n=1 pos=231
+[tok] 11
+,[runner] chunk n=1 pos=232
+[tok] 109871
+102[runner] chunk n=1 pos=233
+[tok] 11
+,[runner] chunk n=1 pos=234
+[tok] 110248
+103[runner] chunk n=1 pos=235
+[tok] 11
+,[runner] chunk n=1 pos=236
+[tok] 109803
+104[runner] chunk n=1 pos=237
+[tok] 11
+,[runner] chunk n=1 pos=238
+[tok] 108345
+105[runner] chunk n=1 pos=239
+[tok] 11
+,[runner] chunk n=1 pos=240
+[tok] 109626
+106[runner] chunk n=1 pos=241
+[tok] 11
+,[runner] chunk n=1 pos=242
+[tok] 110733
+107[runner] chunk n=1 pos=243
+[tok] 11
+,[runner] chunk n=1 pos=244
+[tok] 108479
+108[runner] chunk n=1 pos=245
+[tok] 11
+,[runner] chunk n=1 pos=246
+[tok] 110610
+109[runner] chunk n=1 pos=247
+[tok] 11
+,[runner] chunk n=1 pos=248
+[tok] 104550
+110[runner] chunk n=1 pos=249
+[tok] 11
+,[runner] chunk n=1 pos=250
+[tok] 111659
+111[runner] chunk n=1 pos=251
+[tok] 11
+,[runner] chunk n=1 pos=252
+[tok] 110800
+112[runner] chunk n=1 pos=253
+[tok] 11
+,[runner] chunk n=1 pos=254
+[tok] 114240
+113[runner] chunk n=1 pos=255
+[tok] 11
+,[runner] chunk n=1 pos=256
+[tok] 114365
+114[runner] chunk n=1 pos=257
+[tok] 11
+,[runner] chunk n=1 pos=258
+[tok] 111508
+115[runner] chunk n=1 pos=259
+[tok] 11
+,[runner] chunk n=1 pos=260
+[tok] 114495
+116[runner] chunk n=1 pos=261
+[tok] 11
+,[runner] chunk n=1 pos=262
+[tok] 114959
+117[runner] chunk n=1 pos=263
+[tok] 11
+,[runner] chunk n=1 pos=264
+[tok] 112891
+118[runner] chunk n=1 pos=265
+[tok] 11
+,[runner] chunk n=1 pos=266
+[tok] 112114
+119[runner] chunk n=1 pos=267
+[tok] 11
+,[runner] chunk n=1 pos=268
+[tok] 103005
+120[runner] chunk n=1 pos=269
+[tok] 11
+,[runner] chunk n=1 pos=270
+[tok] 116045
+121[runner] chunk n=1 pos=271
+[tok] 11
+,[runner] chunk n=1 pos=272
+[tok] 115760
+122[runner] chunk n=1 pos=273
+[tok] 11
+,[runner] chunk n=1 pos=274
+[tok] 108714
+123[runner] chunk n=1 pos=275
+[tok] 11
+,[runner] chunk n=1 pos=276
+[tok] 115878
+124[runner] chunk n=1 pos=277
+[tok] 11
+,[runner] chunk n=1 pos=278
+[tok] 109641
+125[runner] chunk n=1 pos=279
+[tok] 11
+,[runner] chunk n=1 pos=280
+[tok] 114062
+126[runner] chunk n=1 pos=281
+[tok] 11
+,[runner] chunk n=1 pos=282
+[tok] 115925
+127[runner] chunk n=1 pos=283
+[tok] 11
+,[runner] chunk n=1 pos=284
+[tok] 109295
+128[runner] chunk n=1 pos=285
+[tok] 11
+,[runner] chunk n=1 pos=286
+[tok] 117305
+129[runner] chunk n=1 pos=287
+[tok] 11
+,[runner] chunk n=1 pos=288
+[tok] 106464
+130[runner] chunk n=1 pos=289
+[tok] 11
+,[runner] chunk n=1 pos=290
+[tok] 118901
+131[runner] chunk n=1 pos=291
+[tok] 11
+,[runner] chunk n=1 pos=292
+[tok] 118843
+132[runner] chunk n=1 pos=293
+[tok] 11
+,[runner] chunk n=1 pos=294
+[tok] 117055
+133[runner] chunk n=1 pos=295
+[tok] 11
+,[runner] chunk n=1 pos=296
+[tok] 119338
+134[runner] chunk n=1 pos=297
+[tok] 11
+,[runner] chunk n=1 pos=298
+[tok] 112840
+135[runner] chunk n=1 pos=299
+[tok] 11
+,[runner] chunk n=1 pos=300
+[tok] 116996
+136[runner] chunk n=1 pos=301
+[tok] 11
+,[runner] chunk n=1 pos=302
+[tok] 118558
+137[runner] chunk n=1 pos=303
+[tok] 11
+,[runner] chunk n=1 pos=304
+[tok] 115547
+138[runner] chunk n=1 pos=305
+[tok] 11
+,
+[gen] 256 tokens in 28.40s (9.01 tok/s)  prefill 24.0 tok/s decode 9.73 tok/s
+[bench-json] {"decode_ms":26202.817973136902,"decode_steps":255,"emitted_tokens_per_second":9.014277543987008,"generated_tokens":256,"prefill_ms":2122.2648742198944,"prefill_tokens":51,"prompt_tokens":51,"wall_seconds":28.399391826}
+[prefix] requests=1 reused=0 tokens, last request resumed at 0
+[slots] lookups=3278710 resident=21.3% streams=63756 evictions=61722 pinned=872 h2d=465.02GB
+[slots] census hot set=1220 of 13248 entries (pin budget 1220)
+[skew] distinct=12096 requests=22773237 | top-K share of all requests: 10%:32% 25%:52% 50%:75% 100%:100%
+	Command being timed: "bwrap --ro-bind / / --dev-bind /dev /dev --proc /proc -- env HELIOS_MTP_TOKENS=1 HELIOS_BENCH_PHASES=1 /home/neron/projects/new_engine/helios-determinism/build-determinism/helios gen /home/neron/models/glm53flash_abl --cap 262144 --chunk 4096 --tokens 256 --temp 0 --ignore-eos --prefix-snap-mb 0 --prompt-ids /home/neron/projects/new_engine/helios-determinism/bench/results/determinism/prompt-identity.json"
+	User time (seconds): 46.14
+	System time (seconds): 254.99
+	Percent of CPU this job got: 248%
+	Elapsed (wall clock) time (h:mm:ss or m:ss): 2:01.04
+	Average shared text size (kbytes): 0
+	Average unshared data size (kbytes): 0
+	Average stack size (kbytes): 0
+	Average total size (kbytes): 0
+	Maximum resident set size (kbytes): 98606240
+	Average resident set size (kbytes): 0
+	Major (requiring I/O) page faults: 69
+	Minor (reclaiming a frame) page faults: 25586023
+	Voluntary context switches: 195253
+	Involuntary context switches: 36045
+	Swaps: 0
+	File system inputs: 205858600
+	File system outputs: 48
+	Socket messages sent: 0
+	Socket messages received: 0
+	Signals delivered: 0
+	Page size (bytes): 4096
+	Exit status: 0

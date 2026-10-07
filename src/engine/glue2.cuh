@@ -36,14 +36,17 @@ void sigmoid_f32(float* x, size_t n, Stream s = 0);
 void scatter_row(half* dst, const half* src, const int* row_idx, int width, Stream s = 0);
 
 // MoE permutation for grouped GEMM:
-//   ids [M, topk] int32, weights [M, topk] fp32, M rows
-//   expert_count [E+1] int64 (cumulative bincount)
+//   ids [M, topk] int64, weights [M, topk] fp16, M rows
+//   expert_count [E+1] int64 (per-expert bincount)
 //   token_sorted [M*topk] int64, weight_sorted [M*topk] fp16
-//   order_by_rank: if true, expert_count is cumulative and token_sorted grouped by expert id.
+//   optional route_to_sorted [M*topk] maps each original routing entry to its sorted row.
 // workspace must hold 3*(E+2) int64 (counts, offsets, cursors); provided by the caller.
 void moe_permute(const int64_t* ids, const half* weights, int M, int topk, int E,
                  int64_t* expert_count, int64_t* token_sorted, half* weight_sorted,
-                 int64_t* workspace, Stream s = 0);
+                 int64_t* workspace, Stream s = 0, int64_t* route_to_sorted = nullptr);
+// Sum weighted fp32 contributions in original top-k order, one writer per (token,channel).
+void moe_reduce_sorted(float* y, const float* contributions, const int64_t* route_to_sorted,
+                       int M, int topk, int hidden, Stream s);
 
 // KDA gate/beta preparation (fp32 dt_bias, matching the torch fp32 reference path):
 //   mixed_qkv[f*S + s] = bf16(qkv[s*F + f])           (channel-major for the conv kernel)

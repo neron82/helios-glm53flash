@@ -1,5 +1,6 @@
-// Fused MoE launcher (ported from exllamav3_ext/quant/exl3_moe.cu). Kernel bodies untouched;
-// only the wrapper lost torch: at::Tensor -> raw pointers + explicit extents, TORCH_CHECK ->
+// Fused MoE launcher (ported from exllamav3_ext/quant/exl3_moe.cu). Projection bodies retain
+// their arithmetic; optional disjoint output contributions enable deterministic reduction.
+// The wrapper lost torch: at::Tensor -> raw pointers + explicit extents, TORCH_CHECK ->
 // HELIOS_ASSERT, getCurrentCUDAStream() -> explicit Stream, CUDAGuard -> caller sets the device.
 //
 // Pruned instantiations: the fixed-bitrate kernels for K = 1, 2, 5, 6, 7, 8 are not built; those
@@ -81,7 +82,8 @@ void moe_grouped
     float               act_limit,
     int                 act_function,
     int                 num_active,
-    Stream              s
+    Stream              s,
+    float*              sorted_contributions
 )
 {
     // Nothing for the fused kernel to do
@@ -185,7 +187,8 @@ void moe_grouped
         (void*)& K_gate,
         (void*)& K_up,
         (void*)& K_down,
-        (void*)& locks
+        (void*)& locks,
+        (void*)& sorted_contributions
     };
 
     // Fit the dynamic smem request to the device (static + dynamic <= opt-in limit).

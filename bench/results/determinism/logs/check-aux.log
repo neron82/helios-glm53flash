@@ -1,0 +1,6 @@
+RMS norm max error: 0.000244141 (half precision expected <0.01)
+PASS: RMS norm
+SILU mul max error: 0.00195312 (half precision expected <0.01)
+PASS: SILU mul
+PASS: DSA topk
+All aux parity tests passed.

@@ -1,0 +1,134 @@
+[
+  {
+    "entry": ".visible .entry _ZN6helios4glue19moe_reduce_sorted_kEPfPKfPKliii(",
+    "add_rn_f32_count": 0,
+    "add_rn_ftz_f32_count": 5,
+    "example_adds": [
+      "add.rn.ftz.f32 %f13, %f24, %f12;",
+      "add.rn.ftz.f32 %f15, %f13, %f14;",
+      "add.rn.ftz.f32 %f17, %f15, %f16;",
+      "add.rn.ftz.f32 %f24, %f17, %f18;",
+      "add.rn.ftz.f32 %f24, %f24, %f19;"
+    ]
+  },
+  {
+    "entry": ".visible .entry _ZN6helios3aux42cuda_recurrent_gated_delta_rule_kernel_128ILb0ELi4ELb1EEEvPK13__nv_bfloat16PKfS4_PfPS2_iiiiiifPKiiS6_(",
+    "add_rn_f32_count": 8,
+    "add_rn_ftz_f32_count": 0,
+    "example_adds": [
+      "add.rn.f32 %f223, %f224, %f225;",
+      "add.rn.f32 %f226, %f223, %f228;",
+      "add.rn.f32 %f229, %f226, %f231;",
+      "add.rn.f32 %f232, %f229, %f234;",
+      "add.rn.f32 %f495, %f496, %f497;",
+      "add.rn.f32 %f498, %f495, %f500;",
+      "add.rn.f32 %f501, %f498, %f503;",
+      "add.rn.f32 %f504, %f501, %f506;"
+    ]
+  },
+  {
+    "entry": ".visible .entry _ZN6helios3aux42cuda_recurrent_gated_delta_rule_kernel_128ILb0ELi1ELb1EEEvPK13__nv_bfloat16PKfS4_PfPS2_iiiiiifPKiiS6_(",
+    "add_rn_f32_count": 8,
+    "add_rn_ftz_f32_count": 0,
+    "example_adds": [
+      "add.rn.f32 %f223, %f224, %f225;",
+      "add.rn.f32 %f226, %f223, %f228;",
+      "add.rn.f32 %f229, %f226, %f231;",
+      "add.rn.f32 %f232, %f229, %f234;",
+      "add.rn.f32 %f495, %f496, %f497;",
+      "add.rn.f32 %f498, %f495, %f500;",
+      "add.rn.f32 %f501, %f498, %f503;",
+      "add.rn.f32 %f504, %f501, %f506;"
+    ]
+  },
+  {
+    "entry": ".visible .entry _ZN6helios3aux42cuda_recurrent_gated_delta_rule_kernel_128ILb1ELi4ELb1EEEvPK13__nv_bfloat16PKfS4_PfPS2_iiiiiifPKiiS6_(",
+    "add_rn_f32_count": 8,
+    "add_rn_ftz_f32_count": 0,
+    "example_adds": [
+      "add.rn.f32 %f223, %f224, %f225;",
+      "add.rn.f32 %f226, %f223, %f228;",
+      "add.rn.f32 %f229, %f226, %f231;",
+      "add.rn.f32 %f232, %f229, %f234;",
+      "add.rn.f32 %f495, %f496, %f497;",
+      "add.rn.f32 %f498, %f495, %f500;",
+      "add.rn.f32 %f501, %f498, %f503;",
+      "add.rn.f32 %f504, %f501, %f506;"
+    ]
+  },
+  {
+    "entry": ".visible .entry _ZN6helios3aux42cuda_recurrent_gated_delta_rule_kernel_128ILb1ELi1ELb1EEEvPK13__nv_bfloat16PKfS4_PfPS2_iiiiiifPKiiS6_(",
+    "add_rn_f32_count": 8,
+    "add_rn_ftz_f32_count": 0,
+    "example_adds": [
+      "add.rn.f32 %f223, %f224, %f225;",
+      "add.rn.f32 %f226, %f223, %f228;",
+      "add.rn.f32 %f229, %f226, %f231;",
+      "add.rn.f32 %f232, %f229, %f234;",
+      "add.rn.f32 %f495, %f496, %f497;",
+      "add.rn.f32 %f498, %f495, %f500;",
+      "add.rn.f32 %f501, %f498, %f503;",
+      "add.rn.f32 %f504, %f501, %f506;"
+    ]
+  },
+  {
+    "entry": ".visible .entry _ZN6helios3aux42cuda_recurrent_gated_delta_rule_kernel_128ILb0ELi4ELb0EEEvPK13__nv_bfloat16PKfS4_PfPS2_iiiiiifPKiiS6_(",
+    "add_rn_f32_count": 8,
+    "add_rn_ftz_f32_count": 0,
+    "example_adds": [
+      "add.rn.f32 %f156, %f157, %f158;",
+      "add.rn.f32 %f159, %f156, %f161;",
+      "add.rn.f32 %f162, %f159, %f164;",
+      "add.rn.f32 %f165, %f162, %f167;",
+      "add.rn.f32 %f400, %f401, %f402;",
+      "add.rn.f32 %f403, %f400, %f405;",
+      "add.rn.f32 %f406, %f403, %f408;",
+      "add.rn.f32 %f409, %f406, %f411;"
+    ]
+  },
+  {
+    "entry": ".visible .entry _ZN6helios3aux42cuda_recurrent_gated_delta_rule_kernel_128ILb0ELi1ELb0EEEvPK13__nv_bfloat16PKfS4_PfPS2_iiiiiifPKiiS6_(",
+    "add_rn_f32_count": 8,
+    "add_rn_ftz_f32_count": 0,
+    "example_adds": [
+      "add.rn.f32 %f156, %f157, %f158;",
+      "add.rn.f32 %f159, %f156, %f161;",
+      "add.rn.f32 %f162, %f159, %f164;",
+      "add.rn.f32 %f165, %f162, %f167;",
+      "add.rn.f32 %f400, %f401, %f402;",
+      "add.rn.f32 %f403, %f400, %f405;",
+      "add.rn.f32 %f406, %f403, %f408;",
+      "add.rn.f32 %f409, %f406, %f411;"
+    ]
+  },
+  {
+    "entry": ".visible .entry _ZN6helios3aux42cuda_recurrent_gated_delta_rule_kernel_128ILb1ELi4ELb0EEEvPK13__nv_bfloat16PKfS4_PfPS2_iiiiiifPKiiS6_(",
+    "add_rn_f32_count": 8,
+    "add_rn_ftz_f32_count": 0,
+    "example_adds": [
+      "add.rn.f32 %f156, %f157, %f158;",
+      "add.rn.f32 %f159, %f156, %f161;",
+      "add.rn.f32 %f162, %f159, %f164;",
+      "add.rn.f32 %f165, %f162, %f167;",
+      "add.rn.f32 %f400, %f401, %f402;",
+      "add.rn.f32 %f403, %f400, %f405;",
+      "add.rn.f32 %f406, %f403, %f408;",
+      "add.rn.f32 %f409, %f406, %f411;"
+    ]
+  },
+  {
+    "entry": ".visible .entry _ZN6helios3aux42cuda_recurrent_gated_delta_rule_kernel_128ILb1ELi1ELb0EEEvPK13__nv_bfloat16PKfS4_PfPS2_iiiiiifPKiiS6_(",
+    "add_rn_f32_count": 8,
+    "add_rn_ftz_f32_count": 0,
+    "example_adds": [
+      "add.rn.f32 %f156, %f157, %f158;",
+      "add.rn.f32 %f159, %f156, %f161;",
+      "add.rn.f32 %f162, %f159, %f164;",
+      "add.rn.f32 %f165, %f162, %f167;",
+      "add.rn.f32 %f400, %f401, %f402;",
+      "add.rn.f32 %f403, %f400, %f405;",
+      "add.rn.f32 %f406, %f403, %f408;",
+      "add.rn.f32 %f409, %f406, %f411;"
+    ]
+  }
+]

@@ -1,0 +1,71 @@
+[
+  {
+    "phase": "before",
+    "command": "ctest --test-dir build-determinism --output-on-failure -R '^(expert_layout|prefix_policy|utf8|chat_protocol|vision_support)$'",
+    "status": "5/5 PASS",
+    "log": "bench/results/determinism/logs/ctest-before.log",
+    "log_sha256": "78d02513ad429bbe951725068ccb683ba8eaafdfc3afee1c55d21e7c2e91e751"
+  },
+  {
+    "phase": "before",
+    "command": "build-determinism/helios_tokenizer_test /home/neron/models/glm53flash_abl test/tokenizer_vectors.json",
+    "status": "28/28 PASS",
+    "log": "bench/results/determinism/logs/tokenizer-A-before.log",
+    "log_sha256": "e3e3438a3f1dc0fec04cdd92db40d834459326b27a0a5b87c1463653b164ec40"
+  },
+  {
+    "phase": "before",
+    "command": "build-determinism/helios_tokenizer_test /home/neron/models/glm53flash test/tokenizer_vectors.json",
+    "status": "28/28 PASS",
+    "log": "bench/results/determinism/logs/tokenizer-B-before.log",
+    "log_sha256": "e3e3438a3f1dc0fec04cdd92db40d834459326b27a0a5b87c1463653b164ec40"
+  },
+  {
+    "phase": "after",
+    "command": "ctest --test-dir build-determinism --output-on-failure -R '^(expert_layout|prefix_policy|utf8|chat_protocol|vision_support)$'",
+    "status": "5/5 PASS",
+    "log": "bench/results/determinism/logs/ctest-after.log",
+    "log_sha256": "78d02513ad429bbe951725068ccb683ba8eaafdfc3afee1c55d21e7c2e91e751"
+  },
+  {
+    "phase": "after",
+    "command": "build-determinism/helios_tokenizer_test /home/neron/models/glm53flash_abl test/tokenizer_vectors.json",
+    "status": "28/28 PASS",
+    "log": "bench/results/determinism/logs/tokenizer-A-after.log",
+    "log_sha256": "e3e3438a3f1dc0fec04cdd92db40d834459326b27a0a5b87c1463653b164ec40"
+  },
+  {
+    "phase": "after",
+    "command": "build-determinism/helios_tokenizer_test /home/neron/models/glm53flash test/tokenizer_vectors.json",
+    "status": "28/28 PASS",
+    "log": "bench/results/determinism/logs/tokenizer-B-after.log",
+    "log_sha256": "e3e3438a3f1dc0fec04cdd92db40d834459326b27a0a5b87c1463653b164ec40"
+  },
+  {
+    "phase": "after",
+    "command": "build-determinism/attn/test_attn_parity",
+    "exit": 0,
+    "status": "PASS",
+    "log": "bench/results/determinism/logs/check-attention.log",
+    "log_sha256": "3863f2c0b46594e0a7826178d039f95a27d5ef00ff89adb095ed4032713063dd",
+    "exit_evidence": "assert p.returncode == 0 in identity package; all three completed before restore"
+  },
+  {
+    "phase": "after",
+    "command": "build-determinism/aux/test_aux",
+    "exit": 0,
+    "status": "PASS",
+    "log": "bench/results/determinism/logs/check-aux.log",
+    "log_sha256": "edc4c2e871a591d11a727701fc4962c09f3b3aed1b761b2e65da290c071c1800",
+    "exit_evidence": "assert p.returncode == 0 in identity package; all three completed before restore"
+  },
+  {
+    "phase": "after",
+    "command": "build-determinism/helios_deterministic_reductions_test",
+    "exit": 0,
+    "status": "PASS",
+    "log": "bench/results/determinism/logs/check-reductions.log",
+    "log_sha256": "65d9c5ff52677f1a216648364f87ac65286cdeb02ba8718dc42b32c4c9eb6b50",
+    "exit_evidence": "assert p.returncode == 0 in identity package; all three completed before restore"
+  }
+]

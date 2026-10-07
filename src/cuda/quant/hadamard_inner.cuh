@@ -412,7 +412,7 @@ void had_hf_r_128_guad_inner
     ((half4*) output_ptr)[t] = vg;
 }
 
-// Fused op: o += float(out_had(i)), atomic
+// Fused op: float(out_had(i)), either disjoint store or legacy atomic accumulation.
 
 inline __device__
 void had_hf_r_128_d_inner
@@ -420,7 +420,8 @@ void had_hf_r_128_d_inner
     const half* __restrict__ input_ptr,
     float* __restrict__ output_ptr,
     const half* __restrict__ post_scale,
-    const float r_scale
+    const float r_scale,
+    const bool add = true
 )
 {
     int t = threadIdx.x & 31;
@@ -466,8 +467,15 @@ void had_hf_r_128_d_inner
     sh[t * 4 + 2] = h2;
     sh[t * 4 + 3] = h3;
     __syncwarp();
-    atomicAdd(output_ptr +  0 + t, sh[ 0 + t]);
-    atomicAdd(output_ptr + 32 + t, sh[32 + t]);
-    atomicAdd(output_ptr + 64 + t, sh[64 + t]);
-    atomicAdd(output_ptr + 96 + t, sh[96 + t]);
+    if (add) {
+        atomicAdd(output_ptr +  0 + t, sh[ 0 + t]);
+        atomicAdd(output_ptr + 32 + t, sh[32 + t]);
+        atomicAdd(output_ptr + 64 + t, sh[64 + t]);
+        atomicAdd(output_ptr + 96 + t, sh[96 + t]);
+    } else {
+        output_ptr[ 0 + t] = sh[ 0 + t];
+        output_ptr[32 + t] = sh[32 + t];
+        output_ptr[64 + t] = sh[64 + t];
+        output_ptr[96 + t] = sh[96 + t];
+    }
 }
