@@ -1,0 +1,12 @@
+q_latent relerr 1.76e-04 PASS
+o_absorb relerr 1.76e-04 PASS
+kpool_write relerr 1.75e-04 PASS
+kpool_write split invariance: 0/512 differ (4-token calls), 0/512 (1-token calls), 0 unwritten PASS
+kpool_write ring (20 rows, positions 12..27): 0 differ, 512 written, 0 earlier entries clobbered PASS
+indexer_score relerr 1.73e-04 PASS
+pool_expand PASS
+mla_sparse_decode relerr 2.80e-04 PASS
+mla_dense_prefill relerr 1.56e-04 PASS
+mla_sparse_decode K=1 vs K=2: relerr 2.00e-04, 0/98304 beyond 2e-2 PASS
+indexer_score mma vs scalar: 0/28800 differ (max|d|=3.05e-05), mask mismatches 0, -inf 16596/16596 PASS
+ATTN PARITY: ALL PASS

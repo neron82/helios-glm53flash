@@ -7,3 +7,9 @@ src/cuda/*/build/
 *.nsys-rep
 *.sqlite
 __pycache__/
+
+build-determinism/
+bench/results/determinism/logs/*-vram.jsonl
+bench/results/determinism/logs/diagnostic-before-r*.log
+bench/results/determinism/final-audit-after-commit.json
+bench/results/determinism/ptx-final.txt

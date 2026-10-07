@@ -1,0 +1,6 @@
+[1/2] Building CXX object CMakeFiles/helios.dir/src/engine/runner.cpp.o
+/home/neron/projects/new_engine/helios-determinism/src/engine/runner.cpp: In member function ‘void helios::Runner::moe_ffn(helios::Layer&, int)’:
+/home/neron/projects/new_engine/helios-determinism/src/engine/runner.cpp:738:17: warning: unused variable ‘t_sync0’ [-Wunused-variable]
+  738 |   static double t_sync0 = 0, t_d2h = 0, t_moe = 0, t_xfer_back = 0, t_other = 0;
+      |                 ^~~~~~~
+[2/2] Linking CXX executable helios

@@ -1,0 +1,42 @@
+{
+  "names": [
+    "identity-A-r1",
+    "identity-A-r2",
+    "identity-A-r3",
+    "identity-A-r4"
+  ],
+  "pairs": [
+    {
+      "a": "identity-A-r1",
+      "b": "identity-A-r2",
+      "first_difference": null
+    },
+    {
+      "a": "identity-A-r1",
+      "b": "identity-A-r3",
+      "first_difference": null
+    },
+    {
+      "a": "identity-A-r1",
+      "b": "identity-A-r4",
+      "first_difference": null
+    },
+    {
+      "a": "identity-A-r2",
+      "b": "identity-A-r3",
+      "first_difference": null
+    },
+    {
+      "a": "identity-A-r2",
+      "b": "identity-A-r4",
+      "first_difference": null
+    },
+    {
+      "a": "identity-A-r3",
+      "b": "identity-A-r4",
+      "first_difference": null
+    }
+  ],
+  "byte_identical": true,
+  "passed": true
+}

@@ -1,0 +1,14 @@
+PASS recurrence dim=64 channelwise=0 history=0 steps=1 repeats=16 zero differing bytes
+PASS recurrence dim=64 channelwise=0 history=0 steps=7 repeats=16 zero differing bytes
+PASS recurrence dim=64 channelwise=0 history=1 steps=1 repeats=16 zero differing bytes
+PASS recurrence dim=64 channelwise=0 history=1 steps=7 repeats=16 zero differing bytes
+PASS recurrence dim=128 channelwise=0 history=0 steps=1 repeats=16 zero differing bytes
+PASS recurrence dim=128 channelwise=0 history=0 steps=7 repeats=16 zero differing bytes
+PASS recurrence dim=128 channelwise=0 history=1 steps=1 repeats=16 zero differing bytes
+PASS recurrence dim=128 channelwise=0 history=1 steps=7 repeats=16 zero differing bytes
+PASS recurrence dim=128 channelwise=1 history=0 steps=1 repeats=16 zero differing bytes
+PASS recurrence dim=128 channelwise=1 history=0 steps=7 repeats=16 zero differing bytes
+PASS recurrence dim=128 channelwise=1 history=1 steps=1 repeats=16 zero differing bytes
+PASS recurrence dim=128 channelwise=1 history=1 steps=7 repeats=16 zero differing bytes
+PASS MoE fixed routing order through 8 permutations, fp32 cancellation result=2
+PASS unique scatter and tiled GEMM additions

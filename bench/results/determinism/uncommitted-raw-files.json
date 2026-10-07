@@ -1,0 +1,107 @@
+[
+  {
+    "path": "bench/results/determinism/logs/after-A-4096-r1-vram.jsonl",
+    "bytes": 16550,
+    "sha256": "b924bbc62ef8971b8c17cf602b5a02ada70b596adf550017465766a6394d85d2"
+  },
+  {
+    "path": "bench/results/determinism/logs/after-A-4096-r2-vram.jsonl",
+    "bytes": 18143,
+    "sha256": "bd19c6f6c5b8949a783f8113d61fed1b34390d458adc5e3d77dc903e6c71d1ac"
+  },
+  {
+    "path": "bench/results/determinism/logs/after-A-4096-r3-vram.jsonl",
+    "bytes": 19404,
+    "sha256": "70aa65e52072070a345a176649f7129c1ba15d855f7d950fe371ac08592d8416"
+  },
+  {
+    "path": "bench/results/determinism/logs/after-A-4096-r4-vram.jsonl",
+    "bytes": 18298,
+    "sha256": "d5e46950a1efd1b0bca0a847b452d878350eaadd23b0711c75077f6443adaf61"
+  },
+  {
+    "path": "bench/results/determinism/logs/after-A-4096-r5-vram.jsonl",
+    "bytes": 16220,
+    "sha256": "929d8347cc045029754faeea4b06551087480226d22f24bd16af9bbe209f8e06"
+  },
+  {
+    "path": "bench/results/determinism/logs/after-A-4096-r6-vram.jsonl",
+    "bytes": 18309,
+    "sha256": "afaacc4a70dcf660baa548c0ee5655618463c158321c577a7c78ad8079cc0c54"
+  },
+  {
+    "path": "bench/results/determinism/logs/after-A-4096-r7-vram.jsonl",
+    "bytes": 18615,
+    "sha256": "ca04246e17784000dae578c74fe126864f8f746a644ec738f31a55648107e7f5"
+  },
+  {
+    "path": "bench/results/determinism/logs/after-A-4096-r8-vram.jsonl",
+    "bytes": 18457,
+    "sha256": "8bbcbb626c1157603246bed2f249c27bd4abcfe350e8940e01e3f79c95cff2d4"
+  },
+  {
+    "path": "bench/results/determinism/logs/before-A-4096-r1-vram.jsonl",
+    "bytes": 17802,
+    "sha256": "f08ec31b60d3594e5b376f7b2462c1ac0a48ef05478a2068d575cf9abf269320"
+  },
+  {
+    "path": "bench/results/determinism/logs/before-A-4096-r2-vram.jsonl",
+    "bytes": 17983,
+    "sha256": "100daf9e4f7e94945fd26a586945519174e5037f6b81d5988ebef18986829773"
+  },
+  {
+    "path": "bench/results/determinism/logs/before-A-4096-r3-vram.jsonl",
+    "bytes": 18457,
+    "sha256": "d33a9f234478d35a10f01cf8e295b6e68b2430a0d28bfb8f92a0f0bc5e99b5d6"
+  },
+  {
+    "path": "bench/results/determinism/logs/before-A-4096-r4-vram.jsonl",
+    "bytes": 18294,
+    "sha256": "3a82ffe6682b3bb98e0cb937dbd01b157d003b6f7ea558b8604e4ddaaa1edd65"
+  },
+  {
+    "path": "bench/results/determinism/logs/diagnostic-before-r1-vram.jsonl",
+    "bytes": 24693,
+    "sha256": "adf503df5b43810e452cef4c3c131ba55a04255e02a698761a665ac53e4d3ed8"
+  },
+  {
+    "path": "bench/results/determinism/logs/diagnostic-before-r1.log",
+    "bytes": 37879335,
+    "sha256": "f57b5b37d9a8891095876ef1e5831903d38521bd3f37fba2b77303612c86bc7f"
+  },
+  {
+    "path": "bench/results/determinism/logs/diagnostic-before-r2-vram.jsonl",
+    "bytes": 26917,
+    "sha256": "7a391d72b3d4512c7de9d76e3330bb962212984adc113fded937f2544205a9c0"
+  },
+  {
+    "path": "bench/results/determinism/logs/diagnostic-before-r2.log",
+    "bytes": 37879190,
+    "sha256": "78ec8d94b4df461e72154a854b9c709d91b3df7f071897eed9ee81d310e52a98"
+  },
+  {
+    "path": "bench/results/determinism/logs/identity-A-r1-vram.jsonl",
+    "bytes": 14822,
+    "sha256": "b982428e4951912b5f9884900bb0d0cb023bcdcc659185c0947a3988ff930d22"
+  },
+  {
+    "path": "bench/results/determinism/logs/identity-A-r2-vram.jsonl",
+    "bytes": 16588,
+    "sha256": "9504ad2531ef781a394a2cfddb81ceedf16dd7c2a3a20886b67ec56b7844f031"
+  },
+  {
+    "path": "bench/results/determinism/logs/identity-A-r3-vram.jsonl",
+    "bytes": 16265,
+    "sha256": "e9402dd6870572954edcdca23c920f51279eaf3da78a0f6423c20a520d66bf4f"
+  },
+  {
+    "path": "bench/results/determinism/logs/identity-A-r4-vram.jsonl",
+    "bytes": 16105,
+    "sha256": "d9d4026bb4d55c85754278ef0cf60c397ccc6aa03360149638f96a17ba7a6c72"
+  },
+  {
+    "path": "bench/results/determinism/ptx-final.txt",
+    "bytes": 89430789,
+    "sha256": "9860f671d0c1c336687e2977005b9715fbf65fbaa78e3d349af4c9232b87b351"
+  }
+]

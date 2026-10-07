@@ -1,0 +1,143 @@
+[1/47] Building CUDA object CMakeFiles/helios.dir/src/engine/glue.cu.o
+[2/47] Building CUDA object CMakeFiles/helios.dir/src/engine/glue2.cu.o
+/home/neron/projects/new_engine/helios-determinism/src/engine/glue2.cu(353): warning #550-D: variable "s" was set but never used
+      int s = i / HD, rem = i % HD, hh = rem / Dk, dd = rem % Dk;
+          ^
+
+Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+/home/neron/projects/new_engine/helios-determinism/src/engine/glue2.cu(385): warning #550-D: variable "h" was set but never used
+        int h = j % H, d = j / H;
+            ^
+
+/home/neron/projects/new_engine/helios-determinism/src/engine/glue2.cu(385): warning #550-D: variable "d" was set but never used
+        int h = j % H, d = j / H;
+                       ^
+
+/home/neron/projects/new_engine/helios-determinism/src/engine/glue2.cu(387): warning #177-D: variable "s" was declared but never referenced
+        int s = j / (H * Dk), rem = j % (H * Dk);
+            ^
+
+[3/47] Building CUDA object CMakeFiles/helios_deterministic_reductions_test.dir/test/test_deterministic_reductions.cu.o
+[4/47] Building CXX object CMakeFiles/helios.dir/src/engine/runner.cpp.o
+/home/neron/projects/new_engine/helios-determinism/src/engine/runner.cpp: In member function ‘void helios::Runner::moe_ffn(helios::Layer&, int)’:
+/home/neron/projects/new_engine/helios-determinism/src/engine/runner.cpp:740:17: warning: unused variable ‘t_sync0’ [-Wunused-variable]
+  740 |   static double t_sync0 = 0, t_d2h = 0, t_moe = 0, t_xfer_back = 0, t_other = 0;
+      |                 ^~~~~~~
+[5/47] Building CUDA object CMakeFiles/helios_deterministic_reductions_test.dir/src/engine/glue.cu.o
+[6/47] Building CUDA object CMakeFiles/helios_deterministic_reductions_test.dir/src/engine/glue2.cu.o
+/home/neron/projects/new_engine/helios-determinism/src/engine/glue2.cu(353): warning #550-D: variable "s" was set but never used
+      int s = i / HD, rem = i % HD, hh = rem / Dk, dd = rem % Dk;
+          ^
+
+Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+/home/neron/projects/new_engine/helios-determinism/src/engine/glue2.cu(385): warning #550-D: variable "h" was set but never used
+        int h = j % H, d = j / H;
+            ^
+
+/home/neron/projects/new_engine/helios-determinism/src/engine/glue2.cu(385): warning #550-D: variable "d" was set but never used
+        int h = j % H, d = j / H;
+                       ^
+
+/home/neron/projects/new_engine/helios-determinism/src/engine/glue2.cu(387): warning #177-D: variable "s" was declared but never referenced
+        int s = j / (H * Dk), rem = j % (H * Dk);
+            ^
+
+[7/47] Building CUDA object quant/CMakeFiles/exl3_quant_core.dir/hadamard.cu.o
+[8/47] Building CXX object CMakeFiles/helios.dir/src/main.cpp.o
+[9/47] Building CUDA object quant/CMakeFiles/exl3_quant_core.dir/exl3_gemm.cu.o
+/home/neron/projects/new_engine/helios-determinism/src/cuda/quant/exl3_gemm.cu(63): warning #550-D: variable "smem_attr" was set but never used
+          int smem_attr = 0, optin = 0;
+              ^
+
+Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+[10/47] Building CUDA object quant/CMakeFiles/exl3_quant_core.dir/exl3_moe.cu.o
+/home/neron/projects/new_engine/helios-determinism/src/cuda/quant/exl3_moe.cu(244): warning #550-D: variable "sdev" was set but never used
+              int sdev = -1;
+                  ^
+
+Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+/home/neron/projects/new_engine/helios-determinism/src/cuda/quant/exl3_moe.cu(245): warning #550-D: variable "av" was set but never used
+                                 av{};
+                                 ^
+
+/home/neron/projects/new_engine/helios-determinism/src/cuda/quant/exl3_moe.cu: In function ‘void helios::exl3::moe_grouped(const void*, void*, const int64_t*, const int64_t*, const half*, void*, void*, void*, void*, const ExpertTables&, int, int, int, int, int, int, int, int, int, int, bool, bool, float, int, int, helios::Stream, float*)’:
+/home/neron/projects/new_engine/helios-determinism/src/cuda/quant/exl3_moe.cu:258:17: warning: format ‘%zu’ expects argument of type ‘size_t’, but argument 10 has type ‘int’ [-Wformat=]
+  258 |         fprintf(stderr, "[exl3_moe] launch failed: grid=(%d,%d,%d) block=%d smem=%d dev=%d "
+      |                 ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~                                                                                                                                                          
+      |                                                                                                                                                                                                                              |
+      |                                                                                                                                                                                                                              int
+[11/47] Building CXX object CMakeFiles/helios.dir/src/engine/server.cpp.o
+[12/47] Building CUDA object quant/CMakeFiles/exl3_quant_core.dir/reconstruct.cu.o
+/home/neron/projects/new_engine/helios-determinism/src/cuda/quant/reconstruct.cu(357): warning #177-D: variable "blockDim" was declared but never referenced
+      dim3 blockDim(256);
+           ^
+
+Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+[13/47] Building CUDA object quant/CMakeFiles/exl3_quant_core.dir/comp_units/exl3_comp_unit_2_cb0.cu.o
+[14/47] Building CUDA object quant/CMakeFiles/exl3_quant_core.dir/comp_units/exl3_comp_unit_2_cb1.cu.o
+[15/47] Building CUDA object quant/CMakeFiles/exl3_quant_core.dir/exl3_gemv.cu.o
+[16/47] Building CUDA object quant/CMakeFiles/exl3_quant_core.dir/comp_units/exl3_comp_unit_2_cb2.cu.o
+[17/47] Building CUDA object quant/CMakeFiles/exl3_quant_core.dir/comp_units/exl3_comp_unit_3_cb0.cu.o
+[18/47] Building CUDA object quant/CMakeFiles/exl3_quant_core.dir/comp_units/exl3_comp_unit_3_cb1.cu.o
+[19/47] Building CUDA object quant/CMakeFiles/exl3_quant_core.dir/comp_units/exl3_comp_unit_3_cb2.cu.o
+[20/47] Building CUDA object quant/CMakeFiles/exl3_quant_core.dir/comp_units/exl3_comp_unit_4_cb0.cu.o
+[21/47] Building CUDA object quant/CMakeFiles/exl3_quant_core.dir/comp_units/exl3_comp_unit_4_cb1.cu.o
+[22/47] Building CUDA object quant/CMakeFiles/exl3_quant_core.dir/comp_units/exl3_comp_unit_4_cb2.cu.o
+[23/47] Building CUDA object quant/CMakeFiles/exl3_quant_core.dir/comp_units/exl3_comp_unit_5_cb0.cu.o
+[24/47] Building CUDA object quant/CMakeFiles/exl3_quant_core.dir/comp_units/exl3_comp_unit_5_cb1.cu.o
+[25/47] Building CUDA object quant/CMakeFiles/exl3_quant_core.dir/comp_units/exl3_comp_unit_5_cb2.cu.o
+[26/47] Building CUDA object quant/CMakeFiles/exl3_quant_core.dir/comp_units/exl3_comp_unit_6_cb0.cu.o
+[27/47] Building CUDA object quant/CMakeFiles/exl3_quant_core.dir/comp_units/exl3_comp_unit_6_cb1.cu.o
+[28/47] Building CUDA object quant/CMakeFiles/exl3_quant_core.dir/comp_units/exl3_comp_unit_6_cb2.cu.o
+[29/47] Building CUDA object quant/CMakeFiles/exl3_quant_core.dir/comp_units/exl3_comp_unit_8_cb0.cu.o
+[30/47] Building CUDA object quant/CMakeFiles/exl3_quant_core.dir/comp_units/exl3_comp_unit_8_cb1.cu.o
+[31/47] Building CUDA object quant/CMakeFiles/exl3_quant_core.dir/comp_units/exl3_comp_unit_8_cb2.cu.o
+[32/47] Building CUDA object quant/CMakeFiles/exl3_quant_core.dir/comp_units/exl3_moe_inst_k0_n128_cb1.cu.o
+[33/47] Building CUDA object quant/CMakeFiles/exl3_quant_core.dir/comp_units/exl3_moe_inst_k3_cb1.cu.o
+[34/47] Building CUDA object quant/CMakeFiles/exl3_quant_core.dir/comp_units/exl3_moe_inst_k0_n128_cb2.cu.o
+[35/47] Building CUDA object quant/CMakeFiles/exl3_quant_core.dir/comp_units/exl3_moe_inst_k0_n256_cb2.cu.o
+[36/47] Building CUDA object quant/CMakeFiles/exl3_quant_core.dir/comp_units/exl3_moe_inst_k3_cb2.cu.o
+[37/47] Building CUDA object quant/CMakeFiles/exl3_quant_core.dir/comp_units/exl3_moe_inst_k4_cb1.cu.o
+[38/47] Building CUDA object quant/CMakeFiles/exl3_quant_core.dir/comp_units/exl3_moe_inst_k4_cb2.cu.o
+[39/47] Building CUDA object quant/CMakeFiles/exl3_quant_core.dir/comp_units/exl3_moe_inst_k0_n256_cb1.cu.o
+[40/47] Building CUDA object aux/CMakeFiles/aux.dir/gdn.cu.o
+/home/neron/projects/new_engine/helios-determinism/src/cuda/aux/helios_shim.cuh(43): warning #20012-D: __device__ annotation is ignored on a non-virtual function("half4") that is explicitly defaulted on its first declaration
+      __attribute__((device)) half4() = default;
+                     ^
+
+Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+/home/neron/projects/new_engine/helios-determinism/src/cuda/aux/helios_shim.cuh(55): warning #20012-D: __device__ annotation is ignored on a non-virtual function("bfloat164") that is explicitly defaulted on its first declaration
+      __attribute__((device)) bfloat164() = default;
+                     ^
+
+/home/neron/projects/new_engine/helios-determinism/src/cuda/aux/helios_shim.cuh(69): warning #20012-D: __device__ annotation is ignored on a non-virtual function("half8") that is explicitly defaulted on its first declaration
+       __attribute__((device)) half8() = default;
+                      ^
+
+/home/neron/projects/new_engine/helios-determinism/src/cuda/aux/helios_shim.cuh(43): warning #20012-D: __device__ annotation is ignored on a non-virtual function("half4") that is explicitly defaulted on its first declaration
+      __attribute__((device)) half4() = default;
+                     ^
+
+Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+/home/neron/projects/new_engine/helios-determinism/src/cuda/aux/helios_shim.cuh(55): warning #20012-D: __device__ annotation is ignored on a non-virtual function("bfloat164") that is explicitly defaulted on its first declaration
+      __attribute__((device)) bfloat164() = default;
+                     ^
+
+/home/neron/projects/new_engine/helios-determinism/src/cuda/aux/helios_shim.cuh(69): warning #20012-D: __device__ annotation is ignored on a non-virtual function("half8") that is explicitly defaulted on its first declaration
+       __attribute__((device)) half8() = default;
+                      ^
+
+[41/47] Linking CUDA static library aux/libaux.a
+[42/47] Linking CXX executable aux/test_aux
+[43/47] Linking CUDA executable helios_deterministic_reductions_test
+[44/47] Linking CUDA static library quant/libexl3_quant_core.a
+[45/47] Linking CUDA executable quant/test_reconstruct
+[46/47] Linking CUDA executable quant/test_gemm_smoke
+[47/47] Linking CXX executable helios
