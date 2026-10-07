@@ -56,4 +56,5 @@
     const int K_up,                             \
     const int K_down,                           \
                                                 \
-    int* __restrict__ locks
+    int* __restrict__ locks,                    \
+    float* __restrict__ sorted_contributions

@@ -73,3 +73,9 @@ target_include_directories(helios_vision_support_test PRIVATE src third_party)
 target_compile_definitions(helios_vision_support_test PRIVATE HELIOS_VISION_SCRIPT="${CMAKE_CURRENT_SOURCE_DIR}/scripts/vision_encode.py")
 target_link_libraries(helios_vision_support_test PRIVATE Threads::Threads)
 add_test(NAME vision_support COMMAND helios_vision_support_test)
+
+add_executable(helios_deterministic_reductions_test test/test_deterministic_reductions.cu
+  src/engine/glue.cu src/engine/glue2.cu)
+target_include_directories(helios_deterministic_reductions_test PRIVATE src)
+target_link_libraries(helios_deterministic_reductions_test PRIVATE aux CUDA::cudart)
+add_test(NAME deterministic_reductions COMMAND helios_deterministic_reductions_test)

@@ -185,6 +185,8 @@ private:
     int64_t* ec = nullptr;         // [289]
     int64_t* tsorted = nullptr;    // [max*8]
     half* wsorted = nullptr;       // [max*8]
+    float* moe_contributions = nullptr; // [max*8,4096], one writer per routed output
+    int64_t* route_to_sorted = nullptr; // [max*8], inverse routing permutation
     int64_t* perm_ws = nullptr;    // [3*(288+2)]
     void** tables = nullptr;       // [9*288] device pointer tables
     char* stage = nullptr;         // spare GPU1 scratch

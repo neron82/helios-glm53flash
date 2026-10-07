@@ -245,13 +245,16 @@ void exl3_moe_kernel(EXL3_MOE_KERNEL_ARGS)
                 int token_idx = top_x[warp_idx / warps_per_token];
                 half weight = weights[warp_idx / warps_per_token];
                 int token_off = warp_idx % warps_per_token;
-                float* out_ptr = output_state + token_idx * hidden_dim + token_off * 128;
+                float* out_ptr = sorted_contributions
+                    ? sorted_contributions + (size_t)(start + warp_idx / warps_per_token) * hidden_dim + token_off * 128
+                    : output_state + (size_t)token_idx * hidden_dim + token_off * 128;
                 had_hf_r_128_d_inner
                 (
                     temp_state_g + 128 * warp_idx,
                     out_ptr,
                     exp_down_svh + 128 * token_off,
-                    0.088388347648f * __half2float(weight)
+                    0.088388347648f * __half2float(weight),
+                    sorted_contributions == nullptr
                 );
             }
         };

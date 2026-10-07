@@ -12,6 +12,7 @@ void embed_gather(const void* embed_bf16, const int* ids, int n, half* out, int 
 void stream_expand(const half* h, float* streams, int n, int hidden, Stream s = 0);
 // Final collapse used when the model has no hc_head weights: mean over the H streams.
 void gather_rows(const half* src, const int64_t* idx, half* dst, int n, int h, Stream s = 0);
+// idx must be unique within a call; serialize calls sharing y on the same stream.
 void scatter_add_rows(float* y, const float* src, const int64_t* idx, const half* w, int n, int h,
                       Stream s = 0);
 void stream_mean(const float* streams, half* out, int R, int H, int D, Stream s = 0);

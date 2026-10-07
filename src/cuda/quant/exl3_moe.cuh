@@ -37,7 +37,9 @@ int moe_max_concurrency(int device);
 // Fused mixture-of-experts MLP for EXL3 weights: for every expert, gather its tokens, run
 // gate/up projections (with the input Hadamard transform + suh), apply the activation
 // (act_limit-clamped SiLU/GeLU/relu2) with the output transform + svh, run the down projection
-// (again suh/svh), scale by each token's routing weight and atomically accumulate into y.
+// (again suh/svh), scale by each token's routing weight, then either write disjoint
+// sorted_contributions for a fixed-order reduction (engine path), or atomically accumulate
+// into y (legacy callers). No projection or Hadamard arithmetic changes.
 //
 //   x                     -> input hidden state, fp16 [tokens, hidden_dim], contiguous
 //   y                       -> output hidden state, fp32 [tokens, hidden_dim], CONTIGUOUS AND
@@ -96,7 +98,10 @@ void moe_grouped
     float               act_limit     = 10.0f,
     int                 act_function  = MOE_ACT_SILU,
     int                 num_active    = -1,
-    Stream              s             = 0
+    Stream              s             = 0,
+    // Optional fp32 [tokens*topk,hidden_dim] in token_sorted order. When supplied,
+    // write each weighted contribution once; caller reduces in fixed routing order.
+    float*              sorted_contributions = nullptr
 );
 
 } // namespace exl3

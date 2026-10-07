@@ -66,7 +66,12 @@ __global__ void scatter_add_rows_k(float* __restrict__ y, const float* __restric
   if (i >= n * h) return;
   int r = i / h, d = i % h;
   float wv = __half2float(w[r]);
-  atomicAdd(&y[(size_t)idx[r] * h + d], wv * src[i]);
+  // moe_permute supplies unique token indices within each expert (routing is top-k
+  // without replacement). Expert launches use the same stream in ascending expert
+  // order, so each cell has one writer here and a fixed order across launches.
+  // Explicit rounding retains the separate fp32 multiply and atomic-add arithmetic.
+  float* dst = &y[(size_t)idx[r] * h + d];
+  *dst = __fadd_rn(*dst, __fmul_rn(wv, src[i]));
 }
 
 void scatter_add_rows(float* y, const float* src, const int64_t* idx, const half* w, int n, int h,

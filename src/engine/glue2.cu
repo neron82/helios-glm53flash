@@ -27,7 +27,8 @@ __global__ void gemm_nt_f16_k(const half* __restrict__ x, const half* __restrict
   if (m >= M || n >= N) return;
   if (y_fp32) {
     float* yf = (float*)y;
-    if (add) atomicAdd(&yf[(size_t)m * N + n], acc);
+    // Tiles own disjoint (m,n) cells; calls on the supplied stream are ordered.
+    if (add) yf[(size_t)m * N + n] = __fadd_rn(yf[(size_t)m * N + n], acc);
     else yf[(size_t)m * N + n] = acc;
   } else {
     ((half*)y)[(size_t)m * N + n] = __float2half_rn(acc);
@@ -265,18 +266,20 @@ __global__ void moe_offset_k(const int64_t* __restrict__ count, int E,
 __global__ void moe_scatter_k(const int64_t* __restrict__ ids, const half* __restrict__ weights,
                               int total, int topk, const int64_t* __restrict__ offset,
                               int64_t* __restrict__ cursor,
-                              int64_t* __restrict__ token_sorted, half* __restrict__ weight_sorted) {
+                              int64_t* __restrict__ token_sorted, half* __restrict__ weight_sorted,
+                              int64_t* __restrict__ route_to_sorted) {
   int i = blockIdx.x * blockDim.x + threadIdx.x;
   if (i >= total) return;
   int e = ids[i];
   int64_t pos = atomicAdd((unsigned long long*)&cursor[e], 1ull);
   token_sorted[pos] = i / topk;
   weight_sorted[pos] = weights[i];
+  if (route_to_sorted) route_to_sorted[i] = pos;
 }
 
 void moe_permute(const int64_t* ids, const half* weights, int M, int topk, int E,
                  int64_t* expert_count, int64_t* token_sorted, half* weight_sorted,
-                 int64_t* workspace, Stream s) {
+                 int64_t* workspace, Stream s, int64_t* route_to_sorted) {
   int64_t* cnt = workspace;
   int64_t* off = workspace + E + 2;
   int64_t* cur = workspace + 2 * (E + 2);
@@ -285,7 +288,26 @@ void moe_permute(const int64_t* ids, const half* weights, int M, int topk, int E
   moe_offset_k<<<1, 1, 0, s>>>(cnt, E, off, expert_count);
   cuda_check(cudaMemcpyAsync(cur, off, (E + 1) * sizeof(int64_t), cudaMemcpyDeviceToDevice, s));
   moe_scatter_k<<<(total + 255) / 256, 256, 0, s>>>(ids, weights, total, topk, off, cur,
-                                                    token_sorted, weight_sorted);
+                                                    token_sorted, weight_sorted, route_to_sorted);
+  cuda_check(cudaPeekAtLastError());
+}
+
+// Each routed expert writes a disjoint contribution. Retain its exact fp32 value
+// and select a legal atomic ordering, ascending original routing rank, starting at +0.
+__global__ void moe_reduce_sorted_k(float* y, const float* contributions,
+                                     const int64_t* route_to_sorted, int M, int topk, int hidden) {
+  size_t i = blockIdx.x * (size_t)blockDim.x + threadIdx.x;
+  if (i >= (size_t)M * hidden) return;
+  int token = i / hidden, channel = i % hidden;
+  float acc = 0.f;
+  for (int j = 0; j < topk; ++j)
+    acc = __fadd_rn(acc, contributions[(size_t)route_to_sorted[token * topk + j] * hidden + channel]);
+  y[i] = acc;
+}
+void moe_reduce_sorted(float* y, const float* contributions, const int64_t* route_to_sorted,
+                       int M, int topk, int hidden, Stream s) {
+  size_t total = (size_t)M * hidden;
+  moe_reduce_sorted_k<<<(total + 255) / 256, 256, 0, s>>>(y, contributions, route_to_sorted, M, topk, hidden);
   cuda_check(cudaPeekAtLastError());
 }
 

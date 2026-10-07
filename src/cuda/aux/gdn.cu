@@ -1,6 +1,6 @@
 // Ported from exllamav3 exllamav3_ext/gdn.cu: the decode-side GDN / KDA kernels. Kernel
-// bodies are unchanged; launchers take raw pointers + explicit dimensions + an explicit
-// stream. The CUDA-graph variants (_gr / record_param) and the mamba2_* paths were dropped.
+// projections retain their arithmetic; recurrence shared reductions use fixed SUBK order.
+// Launchers take raw pointers + explicit dimensions + an explicit stream. The CUDA-graph variants (_gr / record_param) and the mamba2_* paths were dropped.
 #include "gdn.cuh"
 #include "helios_shim.cuh"
 #include <cmath>
@@ -11,6 +11,15 @@ namespace helios { namespace aux {
 using bfloat16 = __nv_bfloat16;
 
 #define SUBK 4
+
+// Shared fp32 atomicAdd preserves subnormals. --use_fast_math would make an
+// intrinsic add flush them; explicit PTX preserves the original reduction semantics.
+__device__ __forceinline__ float shared_sum_add(float a, float b)
+{
+    float result;
+    asm("add.rn.f32 %0, %1, %2;" : "=f"(result) : "f"(a), "f"(b));
+    return result;
+}
 
 #define FUSED_OP_2_THREADS 512
 #define FUSED_OP_3_THREADS 256
@@ -359,6 +368,7 @@ void cuda_recurrent_gated_delta_rule_kernel
     __shared__ float sh_q[MAX_HEAD_DIM];
     __shared__ float sh_dot1[MAX_HEAD_DIM];
     __shared__ float sh_dot2[MAX_HEAD_DIM];
+    __shared__ float sh_partial[SUBK][MAX_HEAD_DIM];
 
     // Iterate over sequence dim
     for (int s = 0; s < seqlen; ++s)
@@ -476,8 +486,12 @@ void cuda_recurrent_gated_delta_rule_kernel
                     for (int j = 0; j < 8; ++j, rs_rd += v_head_dim, sh_k_rd++)
                         sum = sum + *sh_k_rd * *rs_rd;
                 }
-                atomicAdd(sh_dot1 + t, sum);
+                sh_partial[bt][t] = sum;
             }
+            __syncthreads();
+            if (t < v_chunk_dim && bt == 0)
+                for (int part = 0; part < SUBK; ++part)
+                    sh_dot1[t] = shared_sum_add(sh_dot1[t], sh_partial[part][t]);
             __syncthreads();
         }
 
@@ -512,12 +526,15 @@ void cuda_recurrent_gated_delta_rule_kernel
                     v_out = v_out + *sh_q_rd * state;
                 }
             }
-            atomicAdd(sh_dot2 + t, v_out);
+            sh_partial[bt][t] = v_out;
         }
         __syncthreads();
 
         if (t < v_chunk_dim && bt == 0)
         {
+            // One writer per output, fixed ascending SUBK order, fp32 as before.
+            for (int part = 0; part < SUBK; ++part)
+                sh_dot2[t] = shared_sum_add(sh_dot2[t], sh_partial[part][t]);
             float v_out = sh_dot2[t];
 
             // Store attn output
@@ -591,6 +608,7 @@ void cuda_recurrent_gated_delta_rule_kernel_128
     __shared__ float sh_q[HEAD_DIM];
     __shared__ float sh_dot1[HEAD_DIM];
     __shared__ float sh_dot2[HEAD_DIM];
+    __shared__ float sh_partial[SUBK][HEAD_DIM];
     __shared__ float sh_g[CHANNELWISE ? HEAD_DIM : 1];
 
     for (int s = 0; s < seqlen; ++s)
@@ -679,8 +697,12 @@ void cuda_recurrent_gated_delta_rule_kernel_128
                         sum = sum + *sh_k_rd * *rs_rd;
                 }
             }
-            atomicAdd(sh_dot1 + t, sum);
+            sh_partial[bt][t] = sum;
         }
+        __syncthreads();
+        if (t < V_CHUNK_DIM && bt == 0)
+            for (int part = 0; part < SUBK; ++part)
+                sh_dot1[t] = shared_sum_add(sh_dot1[t], sh_partial[part][t]);
         __syncthreads();
 
         if (t < V_CHUNK_DIM)
@@ -708,12 +730,16 @@ void cuda_recurrent_gated_delta_rule_kernel_128
                     v_out = v_out + *sh_q_rd * state;
                 }
             }
-            atomicAdd(sh_dot2 + t, v_out);
+            sh_partial[bt][t] = v_out;
         }
         __syncthreads();
 
         if (t < V_CHUNK_DIM && bt == 0)
+        {
+            for (int part = 0; part < SUBK; ++part)
+                sh_dot2[t] = shared_sum_add(sh_dot2[t], sh_partial[part][t]);
             out[t] = __float2bfloat16_rz(sh_dot2[t] * scale);
+        }
 
         mixed_qkv +=        2 * HEAD_DIM * num_k_heads + HEAD_DIM * num_v_heads;
         g +=                num_v_heads * (CHANNELWISE ? HEAD_DIM : 1);
