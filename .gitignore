@@ -1,6 +1,6 @@
 # Build output (top level and the standalone kernel test builds)
 build/
-build-night-speedup/
+build-*/
 src/cuda/*/build/
 
 # Engine runtime artefacts, if a checkpoint lives inside the tree
