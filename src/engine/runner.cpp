@@ -188,7 +188,7 @@ bool Runner::init(Model& m, Cache& c, SlotMgr& sm, Tokenizer* tk, int max_chunk)
       m.layers[l].kda_ord = m.cfg.attn[l] == KDA ? k++ : -1;
     }
   }
-  {   // transposed w_uv for every MLA layer (also the MTP layer if it has one)
+  {   // transposed w_uv for every trunk MLA layer
     int made = 0;
     for (int l = 0; l < m.cfg.n_layers; l++) {
       if (m.cfg.attn[l] != MLA || !m.layers[l].mla.kv_b) continue;
@@ -955,14 +955,12 @@ void Runner::run_chunk(int n, int pos, bool prefill) {
   const int cap = c_->cap();
   if (pos >= cap) {
     fprintf(stderr, "[runner] context full (%d/%d): skipping chunk of %d\n", pos, cap, n);
-    last_rows_ = 0;
     return;
   }
   if (pos + n > cap) {
     n = cap - pos;
     fprintf(stderr, "[runner] clamping chunk to %d tokens (context limit %d)\n", n, cap);
   }
-  last_rows_ = n;
   (void)prefill;
   Device& g0 = Engine::instance().gpu(0);
   DevGuard chunk_guard(g0.phys_idx());
@@ -1523,10 +1521,13 @@ std::vector<int> Runner::generate(const std::vector<int>& prompt, const GenParam
     const std::vector<ImageEmbedding>*& pointer;
     ~ClearImages() { pointer = nullptr; }
   } clear_images{images_};
+  const bool bench_phases = getenv("HELIOS_BENCH_PHASES") != nullptr;
+  const auto slots_begin = bench_phases ? sm_->stats_counters() : SlotMgr::Stats{};
   const int start = prefix_begin(prompt, reuse_limit);
   cached_images_ = images;
   if (start < (int)prompt.size())
     prefill(std::vector<int>(prompt.begin() + start, prompt.end()));
+  const auto slots_prefilled = bench_phases ? sm_->stats_counters() : SlotMgr::Stats{};
   std::vector<int> out;
   Sampler smp;
   smp.reset(p.seed ? p.seed : 1234);
@@ -1537,11 +1538,26 @@ std::vector<int> Runner::generate(const std::vector<int>& prompt, const GenParam
     int tok = smp.sample(w0.host_logits, m_->cfg.vocab, p, recent);
     if (tok == tk_->eos_id() && !p.ignore_eos) break;
     out.push_back(tok);
-    if (getenv("HELIOS_MTP_TOKENS")) fprintf(stderr, "[tok] %d\n", tok);
+    if (getenv("HELIOS_TRACE_TOKENS")) fprintf(stderr, "[tok] %d\n", tok);
     recent.push_back(tok);
     if (on_token && !on_token(tok)) break;
     if ((int)out.size() >= p.max_tokens) break;
     decode({tok});
+  }
+  if (bench_phases) {
+    auto report = [](const char* phase, const SlotMgr::Stats& a, const SlotMgr::Stats& b) {
+      printf("[bench-slots] %s lookups=%llu resident_hits=%llu streams=%llu evictions=%llu h2d_bytes=%llu\n",
+             phase, (unsigned long long)(b.lookups - a.lookups),
+             (unsigned long long)(b.resident_hits - a.resident_hits),
+             (unsigned long long)(b.misses - a.misses),
+             (unsigned long long)(b.evictions - a.evictions),
+             (unsigned long long)(b.h2d_bytes - a.h2d_bytes));
+      for (size_t l = 0; l < b.streams_by_layer.size(); ++l)
+        printf("[bench-layer] %s layer=%zu streams=%llu\n", phase, l,
+               (unsigned long long)(b.streams_by_layer[l] - a.streams_by_layer[l]));
+    };
+    report("prefill", slots_begin, slots_prefilled);
+    report("decode", slots_prefilled, sm_->stats_counters());
   }
   return out;
 }

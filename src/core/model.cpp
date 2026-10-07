@@ -37,10 +37,9 @@ void Group::set_dims(const std::vector<int64_t>& ts) { K = (int)(ts[2] / 16); }
 struct Job {
   const TensorInfo* ti = nullptr;
   void* dst = nullptr;
-  const void* src_ram = nullptr;   // ARENA_TO_GPU source
   size_t bytes = 0, elems = 0;
   int device = -1;                 // -1 = RAM dst (no CUDA)
-  enum Kind : uint8_t { RAW, BF16_F16, F32_F16, ROUTER_BIAS, MUL1, A2G } kind = RAW;
+  enum Kind : uint8_t { RAW, BF16_F16, F32_F16, ROUTER_BIAS, MUL1 } kind = RAW;
   std::string name;
 };
 
@@ -119,7 +118,6 @@ struct Loader : Model {
     cfg.kpool = tc.value("index_kpool", 4);
     cfg.kpool_on = tc.value("index_kpool_compress", true);
     cfg.kpool_tail = tc.value("index_kpool_always_select_tail", true);
-    cfg.index_share_mtp = tc.value("index_share_for_mtp_iteration", true);
     cfg.n_expert = tc.value("n_routed_experts", 288);
     cfg.topk = tc.value("num_experts_per_tok", 8);
     cfg.moe_inter = tc.value("moe_intermediate_size", 2048);
@@ -146,8 +144,6 @@ struct Loader : Model {
     if (tc.contains("mlp_layer_types"))
       for (int i = 0; i < cfg.n_layers; i++)
         cfg.moe[i] = tc["mlp_layer_types"][i].get<std::string>() == "sparse";
-    cfg.has_mtp = tc.value("num_nextn_predict_layers", 1) > 0;
-    cfg.mtp_layer = cfg.n_layers;
     return true;
   }
 
@@ -255,43 +251,6 @@ struct Loader : Model {
     }
   }
 
-  void load_mtp() {
-    if (!cfg.has_mtp) return;
-    int l = cfg.mtp_layer;
-    std::string p = L(l);
-    // attn (MLA-type) + indexer
-    load_group(p + ".self_attn.q_a_proj", mtp.mla.q_a, 0);
-    load_group(p + ".self_attn.q_b_proj", mtp.mla.q_b, 0);
-    load_group(p + ".self_attn.kv_a_proj_with_mqa", mtp.mla.kv_a, 0);
-    load_group(p + ".self_attn.o_proj", mtp.mla.o_proj, 0);
-    load_f16_from(p + ".self_attn.q_a_layernorm.weight", mtp.mla.q_a_ln, 0, true);
-    load_f16_from(p + ".self_attn.kv_a_layernorm.weight", mtp.mla.kv_a_ln, 0, true);
-    load_f16_from(p + ".self_attn.kv_b_proj.weight", mtp.mla.kv_b, 0, false);
-    load_group(p + ".self_attn.indexer.wq_b", mtp.idx.wq_b, 0);
-    load_f16_from(p + ".self_attn.indexer.wk.weight", mtp.idx.wk, 0, false);
-    load_f16_from(p + ".self_attn.indexer.weights_proj.weight", mtp.idx.wproj, 0, false);
-    load_f16_from(p + ".self_attn.indexer.k_norm.weight", mtp.idx.knorm_w, 0, false);
-    load_f16_from(p + ".self_attn.indexer.k_norm.bias", mtp.idx.knorm_b, 0, false);
-    load_f16_from(p + ".self_attn.indexer.index_kpool_compress_gate", mtp.idx.kpool_gate, 0, false);
-    load_f32_from(p + ".self_attn.indexer.index_kpool_compress_ape", mtp.idx.kpool_ape, 0);
-    // router + shared
-    auto* gw = T(p + ".mlp.gate.weight");
-    auto* gb = T(p + ".mlp.gate.e_score_correction_bias");
-    if (gw) { mtp.moe_w.router_gate = (const half*)(ram_only ? nullptr : A(gw->bytes, 1)); j(gw, (void*)mtp.moe_w.router_gate, 1, Job::RAW); }
-    if (gb) { mtp.moe_w.router_bias = (const half*)(ram_only ? nullptr : A(gb->elems * 2, 1)); j(gb, (void*)mtp.moe_w.router_bias, 1, Job::ROUTER_BIAS); }
-    load_group(p + ".mlp.shared_experts.gate_proj", mtp.moe_w.shared[0], 0);
-    load_group(p + ".mlp.shared_experts.up_proj",  mtp.moe_w.shared[1], 0);
-    load_group(p + ".mlp.shared_experts.down_proj", mtp.moe_w.shared[2], 0);
-    mtp.moe_w.arena_layer = arena_slot_base[l];
-    load_experts(l);
-    load_f16_from(p + ".input_layernorm.weight", mtp.input_ln, 0, true);
-    load_f16_from(p + ".post_attention_layernorm.weight", mtp.post_ln, 0, true);
-    load_group(p + ".eh_proj", mtp.eh_proj, 0);
-    load_f16_from(p + ".enorm.weight", mtp.enorm, 0, true);
-    load_f16_from(p + ".hnorm.weight", mtp.hnorm, 0, true);
-    load_f16_from(p + ".shared_head.norm.weight", mtp.shared_head_norm, 0, true);
-  }
-
   bool load(const std::string& dir, bool ro, bool verbose) {
     directory = dir;
     ram_only = ro;
@@ -300,21 +259,21 @@ struct Loader : Model {
     if (!parse_config(dir)) return false;
 
     // Validate every expert before allocating or copying. Bit widths may differ
-    // between layers (including MTP), so one probe cannot describe the arena.
-    arena_slot_base.assign(cfg.n_layers + 1, -1);
-    arena_byte_base.assign(cfg.n_layers + 1, 0);
-    expert_layouts.resize(cfg.n_layers + 1);
+    // between trunk layers, so one probe cannot describe the arena.
+    arena_slot_base.assign(cfg.n_layers, -1);
+    arena_byte_base.assign(cfg.n_layers, 0);
+    expert_layouts.resize(cfg.n_layers);
     size_t arena_bytes = 0;
     int seq = 0;
     try {
-      for (int l = 0; l <= cfg.n_layers; ++l) {
-        if (l == cfg.n_layers ? !cfg.has_mtp : !cfg.moe[l]) continue;
+      for (int l = 0; l < cfg.n_layers; ++l) {
+        if (!cfg.moe[l]) continue;
         auto& layout = expert_layouts[l];
         layout = expert_layout(shards, l, cfg.n_expert, cfg.hidden, cfg.moe_inter);
         arena_slot_base[l] = cfg.n_expert * seq++;
         arena_byte_base[l] = arena_bytes;
         arena_bytes += (size_t)cfg.n_expert * layout.stride;
-        if (l < cfg.n_layers) slot_stride = std::max(slot_stride, layout.stride);
+        slot_stride = std::max(slot_stride, layout.stride);
         if (verbose)
           printf("[model] experts L%d bits=%d/%d/%d slab=%.3fMB arena_offset=%zu\n",
                  l, layout.bits[0], layout.bits[1], layout.bits[2],
@@ -360,7 +319,6 @@ struct Loader : Model {
       load_hc(l, ly);
       if (ly.moe) load_experts(l);
     }
-    load_mtp();
 
     if (!ram_only) {
       // GPU1 slot pool
@@ -401,13 +359,15 @@ struct Loader : Model {
   // spot-check arena contents against shard bytes
   bool verify_slabs(bool verbose) {
     std::atomic<int> checked{0}, bad{0};
+    std::vector<int> sparse_layers;
+    for (int l = 0; l < cfg.n_layers; ++l)
+      if (arena_slot_base[l] >= 0) sparse_layers.push_back(l);
+    if (sparse_layers.empty()) return true;
     auto worker = [&](int worker_id) {
       std::mt19937 rng(1234 + worker_id);
       std::vector<char> tmp;
       for (int it = 0; it < 16; it++) {
-        int l = 3 + (int)(rng() % (cfg.n_layers - 3 + (cfg.has_mtp ? 2 : 1)));
-        if (l >= cfg.n_layers) l = cfg.mtp_layer;
-        if (arena_slot_base[l] < 0) continue;
+        int l = sparse_layers[rng() % sparse_layers.size()];
         int e = (int)(rng() % cfg.n_expert);
         int q = (int)(rng() % 4);       // piece within gate/up/down triple
         int t = (int)(rng() % 3);
@@ -524,9 +484,6 @@ void Loader::run_jobs(bool verbose) {
       if (jb.device >= 0) cudaSetDevice(Engine::instance().gpu(jb.device).phys_idx());
       switch (jb.kind) {
         case Job::MUL1: shards.read(*jb.ti, jb.dst); break;
-        case Job::A2G:
-          cudaMemcpy(jb.dst, jb.src_ram, jb.bytes, cudaMemcpyHostToDevice);
-          break;
         case Job::RAW:
           if (jb.device < 0) { shards.read(*jb.ti, jb.dst); break; }
           if (jb.bytes <= (16u << 20)) {

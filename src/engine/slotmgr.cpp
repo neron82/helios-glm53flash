@@ -8,11 +8,12 @@
 namespace helios {
 
 bool SlotMgr::init(const Model& m, size_t pool_bytes) {
+  if (getenv("HELIOS_BENCH_PHASES")) st_.streams_by_layer.resize(m.cfg.n_layers);
   m_ = &m;
   stride_ = m.slot_stride;
   n_slots_ = (int)(pool_bytes / stride_);
   if (n_slots_ < 16) { fprintf(stderr, "[slots] pool too small\n"); return false; }
-  n_layer_ = (int)m.cfg.n_layers + 1;
+  n_layer_ = (int)m.cfg.n_layers;
   freq_.assign((size_t)n_layer_ * 288, 0);
   Device& g1 = Engine::instance().gpu(1);
   cudaSetDevice(g1.phys_idx());
@@ -29,10 +30,11 @@ bool SlotMgr::init(const Model& m, size_t pool_bytes) {
 }
 
 bool SlotMgr::init_from_pool(const Model& m, void* pool, int n_slots, const char* census_path) {
+  if (getenv("HELIOS_BENCH_PHASES")) st_.streams_by_layer.resize(m.cfg.n_layers);
   m_ = &m;
   stride_ = m.slot_stride;
   pool_ = (char*)pool;
-  n_layer_ = (int)m.cfg.n_layers + 1;
+  n_layer_ = (int)m.cfg.n_layers;
   freq_.assign((size_t)n_layer_ * 288, 0);
   n_slots_ = n_slots;
   if (!pool_ || n_slots_ < 16) { fprintf(stderr, "[slots] invalid pre-allocated pool\n"); return false; }
@@ -49,7 +51,9 @@ bool SlotMgr::init_from_pool(const Model& m, void* pool, int n_slots, const char
       char magic[8]; uint32_t nl = 0, ne = 0;
       if (fread(magic, 1, 8, f) == 8 && !memcmp(magic, "HELIOSC1", 8) &&
           fread(&nl, 4, 1, f) == 1 && fread(&ne, 4, 1, f) == 1 &&
-          (size_t)nl * ne == freq_.size()) {
+          ne == 288 && (nl == (uint32_t)n_layer_ || nl == (uint32_t)n_layer_ + 1)) {
+        // Legacy files carry one unused draft row at the end. Trunk indices
+        // are unchanged; do not reserve an in-memory row for inactive layers.
         if (fread(freq_.data(), 4, freq_.size(), f) == freq_.size()) {
           uint64_t tot = 0;
           for (uint32_t c : freq_) tot += c;
@@ -255,6 +259,7 @@ void SlotMgr::start_copy(int slot, int layer, int expert) {
   pending_.push_back(slot);
   st_.h2d_bytes += bytes;
   st_.misses++;
+  if (!st_.streams_by_layer.empty()) st_.streams_by_layer.at(layer)++;
 }
 
 int SlotMgr::acquire(int layer, int expert) {

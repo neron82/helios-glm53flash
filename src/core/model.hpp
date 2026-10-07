@@ -1,7 +1,7 @@
 #pragma once
 // Model registry: config parsing, tensor placement plan, EXL3 group structs,
 // expert RAM arena layout, and the full loader (trunk -> GPU0, routers/pools -> GPU1,
-// experts -> RAM arena slabs + MTP preload to GPU1).
+// experts -> RAM arena slabs).
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -15,7 +15,7 @@ namespace helios {
 enum AttnKind : uint8_t { KDA = 0, MLA = 1 };
 
 struct Config {
-  int n_layers = 45;              // transformer layers 0..44 (+MTP at 45)
+  int n_layers = 45;              // transformer layers 0..44
   int hidden = 4096;
   int heads = 64;                 // MLA heads and KDA channels-per-head count
   int q_lora = 1536, kv_lora = 512;
@@ -29,11 +29,9 @@ struct Config {
   float decay_lb = -5.0f;         // KDA gate lower bound
   int kda_conv_k = 4;
   int vocab = 154880;
-  bool mhc = true, kpool_on = true, kpool_tail = true, index_share_mtp = true;
+  bool mhc = true, kpool_on = true, kpool_tail = true;
   std::vector<AttnKind> attn;     // per layer 0..44
   std::vector<bool> moe;          // per layer: sparse MoE vs dense MLP
-  bool has_mtp = true;
-  int mtp_layer = 45;             // tensor namespace index for the MTP draft layer
 };
 
 // One EXL3 quantized matrix: W[out,in] at K bits (trellis third dimension / 16).
@@ -83,7 +81,7 @@ struct MoeWeights {
   const half* router_gate = nullptr;   // [288,4096] GPU1
   const half* router_bias = nullptr;   // [288] fp16, mean-centered, GPU1
   Group shared[3];                     // gate,up,down GPU0 (shared expert)
-  int arena_layer = -1;                // index into Model::slab_base (sparse layers only)
+  int arena_layer = -1;                // logical expert base for this sparse layer
 };
 
 struct DenseMLP { Group gate, up, down; };  // GPU0
@@ -107,16 +105,6 @@ struct Layer {
   const half* input_ln = nullptr, *post_ln = nullptr;
 };
 
-struct MTPWeights {
-  MLAWeights mla; IndexerWeights idx; MoeWeights moe_w;
-  Group eh_proj;                    // [4096, 8192]: cat(hnorm(embed), enorm(trunk_h)) -> 4096
-  const half* enorm = nullptr, *hnorm = nullptr, *shared_head_norm = nullptr;
-  // The MTP block is a PLAIN residual block (no mHC), unlike trunk layers 0..44, so it carries the
-  // usual pre-attn / pre-ffn RMSNorms.
-  const half* input_ln = nullptr, *post_ln = nullptr;
-  void* experts_gpu1 = nullptr;     // 288 slabs fully resident (288*stride)
-};
-
 struct Model {
   std::string directory;
   Config cfg;
@@ -127,7 +115,6 @@ struct Model {
   const half* final_norm = nullptr;     // [4096]
   Group lm_head;                        // quantized [vocab,4096], bits read from checkpoint
   std::vector<Layer> layers;            // 0..44
-  MTPWeights mtp;
 
   // ---- GPU1 (streaming) ----
   void* slot_pool = nullptr;            // n_slots * stride expert slot region
@@ -135,8 +122,8 @@ struct Model {
   size_t slot_stride = 0;               // maximum trunk expert slab size
 
   // ---- RAM arena ----
-  char* arena = nullptr;                // sparse-layers (incl MTP) expert slabs, contiguous
-  int arena_layers = 0;                 // 43 = layers 3..44 + MTP
+  char* arena = nullptr;                // trunk sparse-layer expert slabs, contiguous
+  int arena_layers = 0;                 // 42 = layers 3..44
   std::vector<int> arena_slot_base;     // logical expert index, or -1 for dense layers
   std::vector<size_t> arena_byte_base;  // compact RAM byte offset per layer
   std::vector<ExpertLayout> expert_layouts; // per-layer offsets, sizes and projection bits

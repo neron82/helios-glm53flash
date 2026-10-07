@@ -63,6 +63,7 @@ public:
 
   // ---- statistics ----
   struct Stats {
+    std::vector<uint64_t> streams_by_layer; // optional measurement counters, trunk layers only
     uint64_t hits = 0, misses = 0, evictions = 0, h2d_bytes = 0, pinned_hits = 0;
     uint64_t lookups = 0, resident_hits = 0;   // residency hit rate across expert requests
     double last_ms = 0;

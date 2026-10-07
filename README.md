@@ -57,17 +57,19 @@ recurrent state for KDA).
 
 ## Supported checkpoints
 
-| Local checkpoint | Stored expert layouts | Output head | Expert arena | Largest trunk GPU slot |
+| Local checkpoint | Stored expert layouts | Output head | Trunk expert arena (layout-derived) | Largest trunk GPU slot |
 |---|---|---|---|---|
-| `~/models/glm53flash` | 42 trunk layers at 2 bits; MTP at 2 bits | 5 bits | 72.990 GiB | 6.035 MiB |
-| `~/models/glm53flash_abl` | 22 trunk layers at 2 bits, 20 at 3 bits; MTP at 4 bits | 6 bits | 91.552 GiB | 9.035 MiB |
+| `~/models/glm53flash` | 42 trunk layers at 2 bits; MTP at 2 bits | 5 bits | 71.292 GiB | 6.035 MiB |
+| `~/models/glm53flash_abl` | 22 trunk layers at 2 bits, 20 at 3 bits; MTP at 4 bits | 6 bits | 88.167 GiB | 9.035 MiB |
 
 The second checkpoint was described locally as **3.05 bpw**, but its own
 `quantization_config.json` identifies it as **2.51 bpw**. The loader uses actual tensor shapes and
 codebook metadata rather than either label. It validates each expert projection before allocating,
 keeps a compact host arena per layer, and copies only that layer's actual slab size into the GPU
-pool. MTP is excluded from the trunk slot capacity. This keeps both checkpoints usable with 128 GB
-RAM; padding the entire new arena to the 4-bit MTP slab would exceed that budget.
+pool. The checkpoint's inactive MTP layer is neither loaded nor reserved in the arena or layer
+tables. GPU slots use the largest trunk slab; the host arena retains each trunk layer's compact
+layout. See the [night speedup report](docs/benchmarks/night-speedup-report.md) for measured memory
+savings, production baselines and complete token-ID comparisons.
 
 The architecture table and historical long-context measurements describe the original checkpoint.
 Use the comparison below for the new quant. Contexts beyond 8192 tokens have not been revalidated
